@@ -2,29 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-rgb: 255, 255, 255;
+@layer base {
+  :root {
+    /* Clerk-Inspired Palette (OKLCH) */
+    --background: oklch(1 0 0); /* White */
+    --foreground: oklch(0.145 0 0); /* Near Black */
+
+    --muted: oklch(0.94 0.01 255); /* Default Muted - Adjust if needed */
+    --muted-foreground: oklch(0.45 0 0); /* Medium Gray */
+
+    --popover: var(--background);
+    --popover-foreground: var(--foreground);
+
+    --card: var(--background);
+    --card-foreground: var(--foreground);
+
+    --border: oklch(0.145 0 0); /* Near Black */
+    --input: oklch(0.145 0 0); /* Near Black */
+
+    --primary: oklch(0.60 0.22 15); /* Red */
+    --primary-foreground: oklch(0.985 0 0); /* Near White */
+
+    --secondary: oklch(0.94 0.01 255); /* Default Secondary - Adjust if needed */
+    --secondary-foreground: oklch(0.145 0 0); /* Near Black */
+
+    --accent: oklch(0.94 0.01 255); /* Default Accent - Adjust if needed */
+    --accent-foreground: oklch(0.145 0 0); /* Near Black */
+
+    --destructive: oklch(0.6 0.22 15); /* Use Primary Red for Destructive */
+    --destructive-foreground: oklch(0.985 0 0); /* Near White */
+
+    --ring: oklch(0.60 0.22 15 / 0.5); /* Primary Red with alpha */
+
+    --radius: 0.5rem; /* Default radius, adjust if needed */
+  }
+
+  .dark {
+    /* Define dark mode variables here if needed */
+    --background: oklch(0.15 0 0);
+    --foreground: oklch(0.95 0 0);
+    /* ... map other variables for dark mode ... */
+  }
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-rgb));
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; /* Keep existing font */
+  }
 }
 
 /* Neobrutalism Styles */
 .shadow-neobrutalism {
-  box-shadow: 4px 4px 0px 0px #000000;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 4px 4px 0px 0px oklch(0.145 0 0); /* Use foreground color value directly */
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .shadow-neobrutalism:hover {
-  box-shadow: 6px 6px 0px 0px #000000;
+  box-shadow: 6px 6px 0px 0px oklch(0.145 0 0); /* Use foreground color value directly */
 }
 
 .shadow-neobrutalism-sm {
-  box-shadow: 3px 3px 0px 0px #000000;
+  box-shadow: 3px 3px 0px 0px oklch(0.145 0 0); /* Use foreground color value directly */
 }
 
 @layer utilities {
