@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  # CLI version (default script)
+  reddit-discovery-agent:
+    build: .
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  # API version
+  reddit-discovery-api:
+    build: .
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    restart: unless-stopped 

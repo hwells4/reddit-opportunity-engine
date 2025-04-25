@@ -1,0 +1,7 @@
+openai
+duckduckgo-search
+python-dotenv
+rich
+fastapi
+uvicorn
+pydantic
