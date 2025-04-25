@@ -3,7 +3,7 @@ import { RocketIcon } from "lucide-react"
 
 export function Header() {
   return (
-    <header className="w-full bg-red-500 py-6 px-4 flex justify-between items-center sticky top-0 z-50 border-b-4 border-black shadow-[0_4px_0_rgba(0,0,0,0.2)]">
+    <header className="w-full bg-red-500 py-6 px-4 flex justify-between items-center sticky top-0 z-20 border-b-4 border-black shadow-[0_4px_0_rgba(0,0,0,0.2)]">
       <div className="container max-w-6xl mx-auto flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="w-14 h-14 bg-white rounded-md flex items-center justify-center border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,0.8)]">
