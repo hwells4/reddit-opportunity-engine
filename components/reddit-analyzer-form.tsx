@@ -8,7 +8,7 @@ import { validateSubredditFallback } from "@/utils/subreddit-validator"
 import { useToast } from "@/hooks/use-toast"
 import { SuccessDialog } from "@/components/success-dialog"
 
-export function RedditOpportunityForm() {
+export function RedditAnalyzerForm() {
   const [subreddit, setSubreddit] = useState("")
   const [focus, setFocus] = useState("")
   const [email, setEmail] = useState("")
