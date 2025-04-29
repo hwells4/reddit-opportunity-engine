@@ -9,7 +9,7 @@ export function Header() {
           <div className="w-14 h-14 bg-white rounded-md flex items-center justify-center border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,0.8)]">
             <RocketIcon className="w-8 h-8 text-red-500" />
           </div>
-          <span className="font-black text-3xl tracking-tight text-white">Reddit Analyzer</span>
+          <span className="font-black text-3xl tracking-tight text-white">Reddit Opportunity Engine</span>
         </div>
         <nav>
           <Link

@@ -8,7 +8,7 @@ import { validateSubredditFallback } from "@/utils/subreddit-validator"
 import { useToast } from "@/hooks/use-toast"
 import { SuccessDialog } from "@/components/success-dialog"
 
-export function RedditAnalyzerForm() {
+export function RedditOpportunityForm() {
   const [subreddit, setSubreddit] = useState("")
   const [focus, setFocus] = useState("")
   const [email, setEmail] = useState("")
@@ -199,80 +199,87 @@ export function RedditAnalyzerForm() {
               />
               {isValidating && (
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <LoaderIcon className="w-5 h-5 text-gray-600 animate-spin" />
+                  <LoaderIcon className="h-5 w-5 text-gray-400 animate-spin" />
                 </div>
               )}
-              {!isValidating && isSubredditValid === true && (
+              {isSubredditValid === true && !isValidating && (
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <CheckIcon className="w-5 h-5 text-green-500" />
+                  <CheckIcon className="h-5 w-5 text-green-500" />
                 </div>
               )}
-              {!isValidating && isSubredditValid === false && (
+              {isSubredditValid === false && !isValidating && (
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <XIcon className="w-5 h-5 text-red-500" />
+                  <XIcon className="h-5 w-5 text-red-500" />
                 </div>
               )}
             </div>
             {validationMessage && (
-              <p className={`text-sm font-medium ${isSubredditValid ? "text-green-600" : "text-red-500"}`}>{validationMessage}</p>
+              <p className={`text-sm ${isSubredditValid ? "text-green-600" : "text-red-500"} mt-1`}>
+                {validationMessage}
+              </p>
             )}
           </div>
 
           <div className="space-y-2">
             <label htmlFor="focus" className="block text-base font-bold text-black">
-              Product / Category Focus (Optional)
+              Business Focus <span className="text-slate-500">(optional)</span>
             </label>
             <input
               id="focus"
               type="text"
               value={focus}
               onChange={(e) => setFocus(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-black rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500 transition-all"
-              placeholder="Analytics automation tools"
+              className="w-full py-3 px-4 border-2 border-black rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500 transition-all"
+              placeholder="SaaS, E-commerce, Content, etc."
             />
           </div>
 
           <div className="space-y-2">
             <label htmlFor="email" className="block text-base font-bold text-black">
-              Email Address <span className="text-red-500">*</span>
+              Your Email <span className="text-red-500">*</span>
             </label>
             <input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-black rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500 transition-all"
-              placeholder="your@email.com"
+              className="w-full py-3 px-4 border-2 border-black rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500 transition-all"
+              placeholder="you@example.com"
               required
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting || isValidating || isSubredditValid === false}
-            className="w-full py-4 bg-red-500 text-white rounded-lg font-bold text-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all flex items-center justify-center gap-2"
-          >
-            {isSubmitting ? (
-              <>
-                <LoaderIcon className="w-6 h-6 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              <>
-                Receive Your Product Opportunity Blueprint
-                <ArrowRightIcon className="w-6 h-6" />
-              </>
-            )}
-          </button>
+          <div className="pt-4">
+            <button
+              type="submit"
+              disabled={isSubmitting || !subreddit || !email || isSubredditValid === false}
+              className={`w-full py-4 bg-red-500 text-white rounded-lg font-bold text-lg border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all flex justify-center items-center ${
+                isSubmitting || !subreddit || !email || isSubredditValid === false
+                  ? "opacity-70 cursor-not-allowed"
+                  : ""
+              }`}
+            >
+              {isSubmitting ? (
+                <>
+                  <LoaderIcon className="animate-spin mr-2 h-5 w-5" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  Get My Opportunity Report <ArrowRightIcon className="ml-2 h-5 w-5" />
+                </>
+              )}
+            </button>
+          </div>
 
-          <div className="flex items-start gap-2 mt-4 text-sm text-gray-600 font-medium">
-            <AlertTriangleIcon className="w-4 h-4 mt-0.5" />
-            <p>Your report will be delivered within 24 hours to your email address</p>
+          <div className="text-xs text-gray-600 text-center mt-4 flex items-center justify-center gap-1">
+            <AlertTriangleIcon className="h-3 w-3" />
+            Limited to 5 analyses per subreddit for data quality
           </div>
         </form>
       </div>
 
-      <SuccessDialog 
+      <SuccessDialog
         open={showSuccessDialog}
         onOpenChange={handleDialogClose}
         subreddit={submittedValues.subreddit}
