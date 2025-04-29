@@ -5,12 +5,14 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { ArrowRightIcon, CheckIcon, XIcon, LoaderIcon, AlertTriangleIcon } from "lucide-react"
 import { validateSubredditFallback } from "@/utils/subreddit-validator"
+import { useToast } from "@/hooks/use-toast"
 
 export function RedditAnalyzerForm() {
   const [subreddit, setSubreddit] = useState("")
   const [focus, setFocus] = useState("")
   const [email, setEmail] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const { toast } = useToast()
 
   // Validation states
   const [isValidating, setIsValidating] = useState(false)
@@ -85,22 +87,55 @@ export function RedditAnalyzerForm() {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!subreddit || !email || !isSubredditValid) return
 
     setIsSubmitting(true)
 
-    // Mock submission - would be replaced with actual API call
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/start-pipeline', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          subreddit,
+          focus,
+          email
+        }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success!",
+          description: `Analysis requested for r/${subreddit}. Report will be sent to ${email}`,
+        })
+        
+        // Reset form
+        setSubreddit("")
+        setFocus("")
+        setEmail("")
+        setIsSubredditValid(null)
+        setValidationMessage("")
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Error",
+          description: errorData.error || "Failed to process your request. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error submitting form:", error);
+      toast({
+        title: "Error",
+        description: "Something went wrong. Please try again later.",
+        variant: "destructive",
+      })
+    } finally {
       setIsSubmitting(false)
-      alert(`Analysis requested for r/${subreddit}. Report will be sent to ${email}`)
-      setSubreddit("")
-      setFocus("")
-      setEmail("")
-      setIsSubredditValid(null)
-      setValidationMessage("")
-    }, 1500)
+    }
   }
 
   return (
