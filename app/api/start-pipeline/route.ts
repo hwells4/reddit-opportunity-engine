@@ -42,7 +42,15 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    
+    // According to Gumloop docs, the response contains run_id and url
+    return NextResponse.json({
+      success: true,
+      message: "Pipeline started successfully",
+      run_id: data.run_id,
+      tracking_url: data.url,
+      saved_item_id: data.saved_item_id
+    });
   } catch (error) {
     console.error("Server error:", error);
     return NextResponse.json(
