@@ -1,8 +1,21 @@
+"use client"
+
 import { RedditAnalyzerForm } from "@/components/reddit-analyzer-form"
 import { Header } from "@/components/header"
+import { PricingWidget } from "@/components/pricing-widget"
 import { ChevronRight } from "lucide-react"
+import Image from "next/image"
 
 export default function Home() {
+  const handleStartClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    
+    // Use the global centerRedditForm function to center and focus the form
+    if (typeof window !== 'undefined' && window.centerRedditForm) {
+      window.centerRedditForm()
+    }
+  }
+  
   return (
     <main className="min-h-screen w-full bg-white flex flex-col items-center relative overflow-x-hidden">
       <div className="w-full flex flex-col items-center">
@@ -24,87 +37,35 @@ export default function Home() {
               <RedditAnalyzerForm />
             </section>
 
-            {/* Social Proof Section */}
+            {/* Why Reddit Section (Moved up and enhanced) */}
             <section className="mb-24 relative">
               <div className="h-1 w-32 bg-red-500 mx-auto mb-12"></div>
-              <div className="text-center mb-12">
-                <h2 className="text-3xl font-black mb-4 text-black">Trusted by Founders & Product Teams</h2>
-                <p className="text-xl text-gray-700 font-medium">Discover validated opportunities that others are missing</p>
+              <div className="text-center mb-10">
+                <h2 className="text-4xl md:text-5xl font-black mb-6 text-black">
+                  Why Reddit
+                  <span className="relative">
+                    <span className="block absolute -bottom-3 left-0 right-0 h-1.5 bg-red-500 transform -skew-x-12 rounded-sm"></span>
+                  </span>
+                </h2>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {/* Statistic */}
-                <div className="bg-white rounded-xl border-2 border-black p-8 text-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-transform">
-                  <h3 className="text-4xl font-black mb-3 text-red-500">437+</h3>
-                  <p className="text-gray-700 font-medium">Validated product ideas and counting</p>
+              <div className="max-w-4xl mx-auto relative">
+                {/* Background pattern */}
+                <div className="absolute inset-0 -z-10 opacity-5">
+                  <div className="absolute inset-0 bg-repeat" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23FF4500' fill-opacity='1' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E\")" }}></div>
                 </div>
                 
-                {/* Sample Output Placeholder */}
-                <div className="bg-white rounded-xl border-2 border-black p-8 text-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-transform">
-                  <h3 className="text-2xl font-bold mb-3 text-black">Sample Output</h3>
-                  <p className="text-gray-700 font-medium">[Placeholder for redacted summary image/graphic]</p>
+                <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl border-2 border-black p-10 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transform hover:-translate-y-1 transition-transform duration-300">
+                  <p className="text-2xl md:text-3xl text-gray-800 font-medium leading-relaxed text-center">
+                    <span className="relative inline-block">
+                      <span className="font-bold text-red-500">Reddit</span>
+                      <span className="absolute bottom-0 left-0 right-0 h-1 bg-red-500/20 rounded-full"></span>
+                    </span> is the last authentic corner of the internet—where people openly discuss their problems, frustrations, and wishes without marketing filters.
+                  </p>
+                  <p className="text-2xl md:text-3xl text-gray-800 font-medium mt-8 leading-relaxed text-center">
+                    While others guess what customers want, you'll know <span className="font-bold">exactly</span> what they're asking for.
+                  </p>
                 </div>
-                
-                {/* Mini Case Study Placeholder */}
-                <div className="bg-white rounded-xl border-2 border-black p-8 text-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-transform">
-                  <h3 className="text-2xl font-bold mb-3 text-black">Success Story</h3>
-                  <p className="text-gray-700 font-medium">[Placeholder for mini case study/testimonial]</p>
-                </div>
-              </div>
-            </section>
-
-            {/* Why Reddit Section */}
-            <section className="mb-24 relative">
-              <div className="h-1 w-32 bg-red-500 mx-auto mb-12"></div>
-              <div className="text-center mb-12">
-                <h2 className="text-3xl font-black mb-4 text-black">Why Reddit</h2>
-                <p className="text-xl text-gray-700 font-medium max-w-3xl mx-auto">
-                  Reddit is the last authentic corner of the internet—where people openly discuss their problems, frustrations, and wishes without marketing filters. While others guess what customers want, you'll know exactly what they're asking for.
-                </p>
-              </div>
-            </section>
-
-            {/* Urgency Elements Section */}
-            <section className="mb-24 relative">
-              <div className="h-1 w-32 bg-red-500 mx-auto mb-12"></div>
-              <div className="text-center mb-12">
-                <h2 className="text-3xl font-black mb-4 text-black">Don't Miss Out</h2>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="bg-white rounded-xl border-2 border-black p-8 text-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-transform">
-                  <p className="text-gray-700 font-medium">Every day, thousands of product opportunities are buried in Reddit conversations</p>
-                </div>
-                
-                <div className="bg-white rounded-xl border-2 border-black p-8 text-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-transform">
-                  <p className="text-gray-700 font-medium">Your competitors are still guessing—while you could be building exactly what users want</p>
-                </div>
-                
-                <div className="bg-white rounded-xl border-2 border-black p-8 text-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-transform">
-                  <p className="text-gray-700 font-medium">The idea that builds your business is waiting in plain sight</p>
-                </div>
-              </div>
-            </section>
-
-            {/* Limited Availability Section */}
-            <section className="mb-24 relative">
-              <div className="h-1 w-32 bg-red-500 mx-auto mb-12"></div>
-              <div className="text-center mb-12">
-                <h2 className="text-3xl font-black mb-4 text-black">Premium Access</h2>
-                <p className="text-xl text-gray-700 font-medium max-w-3xl mx-auto">
-                  We limit access to maintain data quality and prevent market saturation. Premium access ensures you're getting insights others don't have.
-                </p>
-              </div>
-            </section>
-
-            {/* Risk Reversal Section */}
-            <section className="mb-24 relative">
-              <div className="h-1 w-32 bg-red-500 mx-auto mb-12"></div>
-              <div className="text-center mb-12">
-                <h2 className="text-3xl font-black mb-4 text-black">Our Guarantee</h2>
-                <p className="text-xl text-gray-700 font-medium max-w-3xl mx-auto">
-                  If your first report doesn't contain at least one viable product idea that excites you, we'll refund your payment and give you a free competitive analysis as an apology.
-                </p>
               </div>
             </section>
 
@@ -163,17 +124,23 @@ export default function Home() {
               </div>
             </section>
 
+            {/* Pricing Section */}
+            <section className="mb-24 relative">
+              <div className="h-1 w-32 bg-red-500 mx-auto mb-12"></div>
+              <PricingWidget />
+            </section>
+
             {/* Call to Action Section */}
             <section className="mb-16">
               <div className="bg-red-500 p-12 rounded-xl border-2 border-black text-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-                <h2 className="text-3xl md:text-4xl font-black mb-4 text-white">Unlock Your Market-Validated Product Ideas</h2>
-                <p className="text-xl mb-8 text-white/90 max-w-2xl mx-auto font-medium">Build what users already want, not what you think they need.</p>
-                <a 
-                  href="#form"
+                <h2 className="text-3xl md:text-4xl font-black mb-4 text-white">Ready to Discover Your Next Product?</h2>
+                <p className="text-xl mb-8 text-white/90 max-w-2xl mx-auto font-medium">Build what users actually want</p>
+                <button 
+                  onClick={handleStartClick}
                   className="px-8 py-4 bg-yellow-400 text-black rounded-lg font-bold text-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,0.8)] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,0.8)] transition-all inline-flex items-center"
                 >
                   Start Now <ChevronRight className="ml-2 w-5 h-5" />
-                </a>
+                </button>
               </div>
             </section>
           </div>

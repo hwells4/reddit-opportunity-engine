@@ -2,11 +2,32 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { ArrowRightIcon, CheckIcon, XIcon, LoaderIcon, AlertTriangleIcon } from "lucide-react"
 import { validateSubredditFallback } from "@/utils/subreddit-validator"
 import { useToast } from "@/hooks/use-toast"
 import { SuccessDialog } from "@/components/success-dialog"
+import { motion, useAnimationControls } from "framer-motion"
+
+// Add a global event listener for centering the form
+if (typeof window !== 'undefined') {
+  // Polyfill for CustomEvent in older browsers
+  if (typeof window.CustomEvent !== 'function') {
+    window.CustomEvent = function(event: string, params: any) {
+      params = params || { bubbles: false, cancelable: false, detail: null };
+      const evt = document.createEvent('CustomEvent');
+      evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
+      return evt;
+    } as any;
+  }
+
+  // Add the function to the window object (we've added the type in types/global.d.ts)
+  (window as any).centerRedditForm = () => {
+    const event = new CustomEvent('centerRedditForm')
+    document.dispatchEvent(event)
+    return true // For debugging
+  }
+}
 
 export function RedditAnalyzerForm() {
   const [subreddit, setSubreddit] = useState("")
@@ -17,6 +38,41 @@ export function RedditAnalyzerForm() {
   const [pipelineId, setPipelineId] = useState<string | undefined>()
   const [runId, setRunId] = useState<string | undefined>()
   const { toast } = useToast()
+  const formRef = useRef<HTMLDivElement>(null)
+  const subredditInputRef = useRef<HTMLInputElement>(null)
+  const controls = useAnimationControls()
+
+  // Listen for center form events
+  useEffect(() => {
+    const handleCenterForm = () => {
+      if (formRef.current) {
+        // First scroll to the form
+        formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        
+        // Then apply a subtle attention animation
+        controls.start({
+          scale: [1, 1.02, 1],
+          boxShadow: [
+            "6px 6px 0px 0px rgba(0,0,0,1)",
+            "8px 8px 0px 0px rgba(0,0,0,1)",
+            "6px 6px 0px 0px rgba(0,0,0,1)"
+          ],
+          transition: { duration: 0.5 }
+        }).then(() => {
+          // Focus the subreddit input after animation completes
+          if (subredditInputRef.current) {
+            subredditInputRef.current.focus()
+          }
+        })
+      }
+    }
+    
+    document.addEventListener('centerRedditForm', handleCenterForm)
+    
+    return () => {
+      document.removeEventListener('centerRedditForm', handleCenterForm)
+    }
+  }, [controls])
 
   // Validation states
   const [isValidating, setIsValidating] = useState(false)
@@ -172,7 +228,12 @@ export function RedditAnalyzerForm() {
 
   return (
     <>
-      <div id="form" className="mx-auto w-full max-w-2xl bg-white rounded-xl border-2 border-black p-8 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
+      <motion.div 
+        id="form" 
+        ref={formRef}
+        animate={controls}
+        className="mx-auto w-full max-w-2xl bg-white rounded-xl border-2 border-black p-8 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]"
+      >
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <label htmlFor="subreddit" className="block text-base font-bold text-black">
@@ -184,6 +245,7 @@ export function RedditAnalyzerForm() {
               </div>
               <input
                 id="subreddit"
+                ref={subredditInputRef}
                 type="text"
                 value={subreddit}
                 onChange={handleSubredditChange}
@@ -253,11 +315,7 @@ export function RedditAnalyzerForm() {
             <button
               type="submit"
               disabled={isSubmitting || !subreddit || !email || isSubredditValid === false}
-              className={`w-full py-4 bg-red-500 text-white rounded-lg font-bold text-lg border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all flex justify-center items-center ${
-                isSubmitting || !subreddit || !email || isSubredditValid === false
-                  ? "opacity-70 cursor-not-allowed"
-                  : ""
-              }`}
+              className="w-full py-4 bg-red-500 text-white rounded-lg font-bold text-lg border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all flex justify-center items-center"
             >
               {isSubmitting ? (
                 <>
@@ -277,7 +335,7 @@ export function RedditAnalyzerForm() {
             Limited to 5 analyses per subreddit for data quality
           </div>
         </form>
-      </div>
+      </motion.div>
 
       <SuccessDialog
         open={showSuccessDialog}
