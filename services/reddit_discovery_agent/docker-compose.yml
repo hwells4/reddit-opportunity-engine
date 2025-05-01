@@ -8,7 +8,6 @@ services:
       - .:/app
     env_file:
       - .env
-    restart: unless-stopped
 
   # API version
   reddit-discovery-api:
