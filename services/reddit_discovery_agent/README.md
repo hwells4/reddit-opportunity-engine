@@ -14,6 +14,14 @@ This tool helps entrepreneurs discover relevant Reddit communities (subreddits) 
   * Audience Alignment
 * Suggests specific search terms for use within those subreddits
 
+### New Agentic Features 🚀
+
+* **Agentic Search Loop**: Continues searching until finding high-quality, niche subreddits
+* **"Think" Tool**: Self-evaluates search progress and adjusts strategy
+* **Search Query Generation**: AI dynamically generates search queries based on previous results
+* **Niche Community Focus**: Prioritizes smaller, more focused communities over general ones
+* **Standard Output Format**: Enhanced metadata for better frontend display
+
 ## Setup
 
 ### Local Setup
@@ -49,26 +57,29 @@ This tool helps entrepreneurs discover relevant Reddit communities (subreddits) 
 
 ## Running the Agent
 
-### With Default Parameters
-
-```bash
-python direct_openrouter.py
-```
-
-### With Custom Parameters
+### Original Implementation
 
 ```bash
 python direct_openrouter.py \
   --product-type "Mobile game for casual players" \
   --problem-area "Player retention and monetization" \
+  --target-audience "Casual mobile gamers age 25-45"
+```
+
+### New Agentic Implementation
+
+```bash
+python agentic_reddit_finder.py \
+  --product-type "Mobile game for casual players" \
+  --problem-area "Player retention and monetization" \
   --target-audience "Casual mobile gamers age 25-45" \
-  --additional-context "Looking for communities that discuss game mechanics and player psychology"
+  --output-file "results.json"
 ```
 
 You can also run it with Docker:
 
 ```bash
-docker-compose run --rm reddit-discovery-agent python direct_openrouter.py \
+docker-compose run --rm reddit-discovery-agent python agentic_reddit_finder.py \
   --product-type "Your product" \
   --problem-area "Your problem area" \
   --target-audience "Your target audience"
@@ -112,15 +123,39 @@ The API includes automatic Swagger documentation at `http://localhost:8000/docs`
 
 ## How It Works
 
+### Original Implementation
+
 1. The tool accepts parameters describing your product, problem area, and target audience
-2. It generates dynamic search queries based on your input
+2. It generates static search queries based on your input
 3. Performs real-time web searches through DuckDuckGo
-4. Sends the search results along with your parameters to the Gemini model via OpenRouter
-5. Processes the response and returns structured recommendations
+4. Extracts and validates subreddits from search results
+5. Sends the search results along with your parameters to the Gemini model via OpenRouter
+6. Processes the response and returns structured recommendations
+
+### New Agentic Implementation
+
+The agentic implementation works in two main phases with a feedback loop:
+
+#### Phase 1: Search Agent
+
+1. Starts with initial search queries based on user input
+2. For each iteration:
+   - Performs web searches to find relevant subreddits
+   - Validates discovered subreddits
+   - Uses the "Think" tool to evaluate results quality
+   - Dynamically generates new, more targeted search queries 
+   - Continues until finding sufficient niche communities or reaching max iterations
+
+#### Phase 2: Recommendation Agent
+
+1. Takes the validated subreddits from the search agent
+2. Prioritizes smaller, niche communities (under 500K subscribers)
+3. Generates final recommendations with detailed metadata
+4. Provides search term suggestions and insights
 
 ## Response Format
 
-The tool returns a JSON object with:
+The agentic implementation returns an enhanced JSON object:
 
 ```json
 {
@@ -133,7 +168,16 @@ The tool returns a JSON object with:
       "audience_alignment": "The audience consists of..."
     }
   ],
-  "search_suggestions": ["term1", "term2", "term3"]
+  "search_suggestions": ["term1", "term2", "term3"],
+  "search_insights": "Analysis of why these recommendations are valuable...",
+  "metadata": {
+    "run_id": "abc123",
+    "search_iterations": 2,
+    "total_subreddits_found": 25,
+    "validated_subreddits_count": 18,
+    "execution_time_seconds": 45.2,
+    "timestamp": "2023-07-22 14:30:15"
+  }
 }
 ```
 
@@ -162,6 +206,17 @@ The tool returns a JSON object with:
 5. **Run as a Service**:
    Update the service settings in Railway to run the container with:
    ```bash
-   python direct_openrouter.py
+   python agentic_reddit_finder.py  # Use new agentic implementation
    ```
+   
+## Architecture
+
+### Components
+
+- **agentic_reddit_finder.py**: Main entry point that orchestrates the overall process
+- **search_agent.py**: Handles the iterative discovery of subreddits with self-evaluation
+- **recommendation_agent.py**: Processes validated subreddits to produce final recommendations
+- **subreddit_utils.py**: Utilities for validating and enriching subreddit data
+- **direct_openrouter.py**: Original implementation (for backward compatibility)
+- **api.py**: FastAPI service for HTTP-based access
    
