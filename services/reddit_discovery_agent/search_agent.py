@@ -41,9 +41,41 @@ class SearchAgent:
         self.niche_threshold = 500000  # Subreddits with fewer subscribers than this are considered niche
         self.min_subscriber_threshold = 2500  # Minimum number of subscribers for a subreddit to be useful
         
+        # Event system for streaming partial results
+        self.callbacks = {
+            "search_started": [],
+            "query_executed": [],
+            "search_results": [],
+            "subreddit_found": [],
+            "subreddit_validated": [],
+            "iteration_started": [],
+            "iteration_complete": [],
+            "thinking_started": [],
+            "thinking_complete": [],
+            "search_complete": []
+        }
+        
+    def register_callback(self, event_name, callback_fn):
+        """Register a callback function for a specific event."""
+        if event_name in self.callbacks:
+            self.callbacks[event_name].append(callback_fn)
+            return True
+        return False
+        
+    def trigger_event(self, event_name, data=None):
+        """Trigger an event and call all registered callbacks."""
+        if event_name in self.callbacks:
+            for callback in self.callbacks[event_name]:
+                try:
+                    callback(data)
+                except Exception as e:
+                    console.print(f"[bold red]Error in callback for event '{event_name}': {str(e)}[/bold red]")
+        
     def search_web(self, query, max_results=5, max_retries=2):
         """Search the web using DuckDuckGo."""
         console.print(f"[yellow]🔎 Searching web for:[/yellow] {query}")
+        self.trigger_event("query_executed", {"query": query})
+        
         retry_count = 0
         base_delay = 2
         
@@ -54,6 +86,7 @@ class SearchAgent:
                 
                 if not results:
                     console.print("[yellow]No results found[/yellow]")
+                    self.trigger_event("search_results", {"query": query, "count": 0, "results": []})
                     return []
                     
                 console.print(f"[green]Found {len(results)} results[/green]")
@@ -78,7 +111,13 @@ class SearchAgent:
                     console.print(f"  [bold]{i+1}.[/bold] {title}")
                     if subreddit_mentions:
                         console.print(f"     [green]Potential subreddits mentioned:[/green] {', '.join(subreddit_mentions)}")
-                    
+                
+                self.trigger_event("search_results", {
+                    "query": query, 
+                    "count": len(results), 
+                    "results": results
+                })
+                
                 return results
                 
             except Exception as e:
@@ -91,10 +130,12 @@ class SearchAgent:
                     continue
                 else:
                     console.print(f"[bold red]Error searching web:[/bold red] {str(e)}")
+                    self.trigger_event("search_results", {"query": query, "error": str(e), "count": 0, "results": []})
                     return []
         
         # If we exhausted retries
         console.print(f"[bold red]Failed to search after {max_retries} retries[/bold red]")
+        self.trigger_event("search_results", {"query": query, "error": "Max retries exceeded", "count": 0, "results": []})
         return []
         
     def extract_subreddits_from_results(self, search_results):
@@ -126,6 +167,7 @@ class SearchAgent:
         # Add newly found subreddits to our set
         for subreddit in extracted_subreddits:
             self.found_subreddits.add(subreddit)
+            self.trigger_event("subreddit_found", {"subreddit": subreddit, "source": "search_results"})
             
         return extracted_subreddits
         
@@ -157,12 +199,28 @@ class SearchAgent:
             # Check if the subreddit meets the minimum subscriber threshold
             if subscriber_count < self.min_subscriber_threshold:
                 console.print(f"[yellow]✓ Validated but too small[/yellow] {subreddit_name} - {subscriber_count} subscribers (minimum {self.min_subscriber_threshold})")
+                self.trigger_event("subreddit_validated", {
+                    "subreddit": subreddit_name,
+                    "status": "too_small",
+                    "subscribers": subscriber_count,
+                    "min_threshold": self.min_subscriber_threshold
+                })
                 return None
                 
             console.print(f"[green]✓ Validated[/green] {subreddit_name} - {subscriber_count} subscribers")
+            self.trigger_event("subreddit_validated", {
+                "subreddit": subreddit_name,
+                "status": "valid",
+                "metadata": metadata,
+                "is_niche": subscriber_count < self.niche_threshold
+            })
             return metadata
         else:
             console.print(f"[red]✗ Could not validate[/red] {subreddit_name}")
+            self.trigger_event("subreddit_validated", {
+                "subreddit": subreddit_name,
+                "status": "invalid"
+            })
             return None
             
     def validate_subreddits(self, subreddit_list):
@@ -190,6 +248,12 @@ class SearchAgent:
         console.print(f"[dim]Using model: {model}[/dim]")
         console.print(f"[dim]Prompt first 100 chars: {prompt[:100]}...[/dim]")
         
+        self.trigger_event("ai_call_started", {
+            "call_id": call_id,
+            "reason": reason,
+            "model": model
+        })
+        
         start_time = time.time()
         
         try:
@@ -215,10 +279,26 @@ class SearchAgent:
             console.print(f"[bold green]✅ API CALL COMPLETED (Run: {run_id}, Call: {call_id})[/bold green]")
             console.print(f"[dim]Duration: {duration:.2f}s, Input tokens: {input_tokens}, Output tokens: {output_tokens}[/dim]")
             
-            return completion.choices[0].message.content
+            content = completion.choices[0].message.content
+            
+            self.trigger_event("ai_call_completed", {
+                "call_id": call_id,
+                "duration": duration,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "content_preview": content[:100] + ("..." if len(content) > 100 else "")
+            })
+            
+            return content
             
         except Exception as e:
             console.print(f"[bold red]❌ API CALL FAILED (Run: {run_id}, Call: {call_id}): {str(e)}[/bold red]")
+            
+            self.trigger_event("ai_call_failed", {
+                "call_id": call_id,
+                "error": str(e)
+            })
+            
             raise e
             
     def generate_search_queries(self, iteration=0, previous_results=None):
@@ -269,6 +349,12 @@ Your response should be a valid JSON object with this structure:
 }}
 """
 
+        self.trigger_event("generating_queries", {
+            "iteration": iteration + 1,
+            "max_iterations": self.max_iterations,
+            "previous_results_count": len(previous_results) if previous_results else 0
+        })
+
         # Make the API call
         response = self.make_ai_call(
             prompt=prompt,
@@ -278,20 +364,46 @@ Your response should be a valid JSON object with this structure:
         
         try:
             parsed_response = json.loads(response)
-            return parsed_response.get("search_queries", [])
+            queries = parsed_response.get("search_queries", [])
+            reasoning = parsed_response.get("reasoning", "No reasoning provided")
+            
+            self.trigger_event("queries_generated", {
+                "iteration": iteration + 1,
+                "queries": queries,
+                "reasoning": reasoning
+            })
+            
+            return queries
         except json.JSONDecodeError:
             console.print("[bold red]Error: AI response was not valid JSON[/bold red]")
             console.print(response)
+            
+            self.trigger_event("queries_generation_failed", {
+                "iteration": iteration + 1,
+                "error": "Invalid JSON response"
+            })
+            
             # Fallback to some default queries
-            return [
+            fallback_queries = [
                 f"small niche subreddits for {self.target_audience}",
                 f"reddit communities under 100k for {self.product_type}",
                 f"specialized reddit forums {self.problem_area}",
                 f"best subreddits for {self.product_type} {self.problem_area}"
             ]
             
+            self.trigger_event("using_fallback_queries", {
+                "iteration": iteration + 1,
+                "queries": fallback_queries
+            })
+            
+            return fallback_queries
+            
     def think(self, validated_subreddits):
         """Evaluate search progress and determine next steps using AI."""
+        self.trigger_event("thinking_started", {
+            "validated_subreddits_count": len(validated_subreddits)
+        })
+        
         # Count how many niche vs large subreddits we've found
         niche_count = sum(1 for sub in validated_subreddits if self.min_subscriber_threshold <= sub.get('subscribers', 0) < self.niche_threshold)
         large_count = sum(1 for sub in validated_subreddits if sub.get('subscribers', 0) >= self.niche_threshold)
@@ -356,26 +468,57 @@ Your response should be a valid JSON object with this structure:
         
         try:
             parsed_response = json.loads(response)
+            
+            self.trigger_event("thinking_complete", {
+                "evaluation": parsed_response.get("evaluation", "No evaluation provided"),
+                "found_sufficient": parsed_response.get("found_sufficient_communities", False),
+                "continue_searching": parsed_response.get("continue_searching", True),
+                "recommended_strategy": parsed_response.get("recommended_strategy", "No strategy provided"),
+                "top_recommendations": parsed_response.get("top_recommendations", [])
+            })
+            
             return parsed_response
         except json.JSONDecodeError:
             console.print("[bold red]Error: AI response was not valid JSON[/bold red]")
             console.print(response)
+            
+            self.trigger_event("thinking_failed", {
+                "error": "Invalid JSON response"
+            })
+            
             # Default response
-            return {
+            default_response = {
                 "evaluation": "Unable to properly evaluate results",
                 "found_sufficient_communities": len(validated_subreddits) >= 6,
                 "continue_searching": len(validated_subreddits) < 6 and self.search_iterations < self.max_iterations,
                 "recommended_strategy": "Try more specific search terms"
             }
+            
+            self.trigger_event("using_fallback_thinking", default_response)
+            
+            return default_response
     
     def run(self):
         """Run the search agent with an agentic loop."""
         console.print(f"\n[bold cyan]===== STARTING SEARCH AGENT RUN (ID: {run_id}) =====[/bold cyan]")
         
+        self.trigger_event("search_started", {
+            "run_id": run_id,
+            "product_type": self.product_type,
+            "problem_area": self.problem_area,
+            "target_audience": self.target_audience,
+            "additional_context": self.additional_context
+        })
+        
         sufficient_results = False
         
         while not sufficient_results and self.search_iterations < self.max_iterations:
             console.print(f"\n[bold cyan]===== ITERATION {self.search_iterations + 1} =====[/bold cyan]")
+            
+            self.trigger_event("iteration_started", {
+                "iteration": self.search_iterations + 1,
+                "max_iterations": self.max_iterations
+            })
             
             # Generate search queries using AI if not the first iteration
             if self.search_iterations == 0:
@@ -388,6 +531,11 @@ Your response should be a valid JSON object with this structure:
                     f"small specialized subreddits {self.product_type}",
                     f"top subreddits {self.product_type} {self.target_audience}"
                 ]
+                
+                self.trigger_event("using_default_queries", {
+                    "iteration": self.search_iterations + 1,
+                    "queries": search_queries
+                })
             else:
                 # Use AI to generate more targeted queries based on previous results
                 search_queries = self.generate_search_queries(
@@ -411,15 +559,34 @@ Your response should be a valid JSON object with this structure:
             potential_subreddits = self.extract_subreddits_from_results(iteration_results)
             console.print(f"\n[bold cyan]Found {len(potential_subreddits)} potential subreddits in this iteration[/bold cyan]")
             
+            self.trigger_event("potential_subreddits_found", {
+                "iteration": self.search_iterations + 1,
+                "count": len(potential_subreddits),
+                "subreddits": potential_subreddits
+            })
+            
             # Only validate new subreddits we haven't validated before
             already_validated = {sub['subreddit_name'].lower() for sub in self.validated_subreddits}
             new_to_validate = [sub for sub in potential_subreddits if sub.lower() not in already_validated]
             
             console.print(f"\n[bold cyan]Validating {len(new_to_validate)} new subreddits...[/bold cyan]")
+            
+            self.trigger_event("validation_started", {
+                "iteration": self.search_iterations + 1,
+                "count": len(new_to_validate),
+                "subreddits": new_to_validate
+            })
+            
             new_validated = self.validate_subreddits(new_to_validate)
             self.validated_subreddits.extend(new_validated)
             
             console.print(f"\n[bold green]Found {len(new_validated)} new valid subreddits in iteration {self.search_iterations + 1}[/bold green]")
+            
+            self.trigger_event("validation_complete", {
+                "iteration": self.search_iterations + 1,
+                "new_valid_count": len(new_validated),
+                "total_valid_count": len(self.validated_subreddits)
+            })
             
             # Use the "Think" function to evaluate progress and decide next steps
             if len(self.validated_subreddits) > 0:
@@ -433,16 +600,32 @@ Your response should be a valid JSON object with this structure:
                 
                 if sufficient_results:
                     console.print("\n[bold green]✅ Found sufficient communities! Ending search.[/bold green]")
+                    self.trigger_event("sufficient_results_found", {
+                        "iteration": self.search_iterations + 1,
+                        "count": len(self.validated_subreddits)
+                    })
                     break
                     
                 if not should_continue:
                     console.print("\n[bold yellow]🛑 AI suggests stopping the search. We have the best results we're likely to find.[/bold yellow]")
+                    self.trigger_event("search_stopping_early", {
+                        "iteration": self.search_iterations + 1,
+                        "reason": "AI recommendation",
+                        "evaluation": evaluation.get("evaluation", "No evaluation provided")
+                    })
                     break
                     
                 console.print(f"\n[bold cyan]Strategy for next iteration:[/bold cyan] {evaluation.get('recommended_strategy', 'No strategy provided')}")
             
             # Increment iteration counter
             self.search_iterations += 1
+            
+            self.trigger_event("iteration_complete", {
+                "iteration": self.search_iterations,
+                "new_valid_subreddits": len(new_validated),
+                "total_valid_subreddits": len(self.validated_subreddits),
+                "continue": not sufficient_results and self.search_iterations < self.max_iterations
+            })
         
         # Search complete - return validated subreddits
         console.print(f"\n[bold green]===== SEARCH COMPLETE ({self.search_iterations} iterations) =====[/bold green]")
@@ -450,6 +633,14 @@ Your response should be a valid JSON object with this structure:
         
         # Display count of API calls made
         console.print(f"[bold cyan]Total API calls made: {api_call_count}[/bold cyan]")
+        
+        self.trigger_event("search_complete", {
+            "run_id": run_id,
+            "iterations": self.search_iterations,
+            "total_valid_subreddits": len(self.validated_subreddits),
+            "api_calls": api_call_count,
+            "validated_subreddits": self.validated_subreddits
+        })
         
         # Clear cache
         clear_cache()
