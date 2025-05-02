@@ -162,13 +162,60 @@ async def get_search_status(search_id: str, last_event_index: int = 0) -> Search
     search_data = search_results[search_id]
     events = search_data["events"][last_event_index:] if last_event_index < len(search_data["events"]) else []
     
+    # Extract recommendation information if available
+    top_recommendations = []
+    recommended_subreddits = {}
+    
+    # Search for thinking_complete events to get recommendations
+    for event in reversed(search_data["events"]):
+        if event["type"] == "thinking_complete":
+            top_recommendations = event["data"].get("top_recommendations", [])
+            break
+    
+    # Create a map of recommended subreddits with their reasons
+    for rec in top_recommendations:
+        subreddit_name = rec.get("subreddit_name", "").lower().strip()
+        if subreddit_name:
+            recommended_subreddits[subreddit_name] = {
+                "reason": rec.get("reason", ""),
+                "rank": len(recommended_subreddits) + 1
+            }
+    
+    # Enhance validated subreddits with recommendation information
+    validated_subreddits = search_data.get("validated_subreddits", [])
+    enhanced_subreddits = []
+    
+    for sub in validated_subreddits:
+        subreddit_name = sub.get("subreddit_name", "").lower().strip()
+        sub_data = {**sub}  # Copy the original data
+        
+        # Add recommendation status if available
+        is_recommended = subreddit_name in recommended_subreddits
+        sub_data["is_recommended"] = is_recommended
+        
+        if is_recommended:
+            sub_data["recommendation_reason"] = recommended_subreddits[subreddit_name]["reason"]
+            sub_data["recommendation_rank"] = recommended_subreddits[subreddit_name]["rank"]
+        
+        enhanced_subreddits.append(sub_data)
+    
+    # Sort by recommendation status, rank, and subscribers
+    if enhanced_subreddits:
+        enhanced_subreddits.sort(
+            key=lambda x: (
+                -1 if x.get("is_recommended", False) else 1,  # Recommended first
+                x.get("recommendation_rank", 999),             # Then by rank
+                -x.get("subscribers", 0)                       # Then by subscriber count (descending)
+            )
+        )
+    
     return SearchStatusResponse(
         search_id=search_id,
         status=search_data["status"],
         complete=search_data["complete"],
         events=events,
         progress=search_data["progress"],
-        validated_subreddits=search_data.get("validated_subreddits"),
+        validated_subreddits=enhanced_subreddits,
         next_event_index=last_event_index + len(events)
     )
 
@@ -186,11 +233,67 @@ async def get_search_results(search_id: str):
     if search_data["status"] == "error":
         raise HTTPException(status_code=500, detail=search_data.get("error", "Unknown error"))
     
+    # Process validated subreddits to include recommendation status
+    validated_subreddits = search_data.get("validated_subreddits", [])
+    
+    # Extract top recommendations from the thinking events if available
+    top_recommendations = []
+    recommended_subreddits = {}
+    
+    # Find the most recent thinking_complete event to get recommendations
+    for event in reversed(search_data["events"]):
+        if event["type"] == "thinking_complete":
+            top_recommendations = event["data"].get("top_recommendations", [])
+            break
+    
+    # Create a map of recommended subreddits with their reasons
+    for rec in top_recommendations:
+        subreddit_name = rec.get("subreddit_name", "").lower().strip()
+        if subreddit_name:
+            recommended_subreddits[subreddit_name] = {
+                "reason": rec.get("reason", ""),
+                "rank": len(recommended_subreddits) + 1  # Assign ranking based on order
+            }
+    
+    # Enhance validated subreddit data with recommendation information
+    enhanced_subreddits = []
+    for sub in validated_subreddits:
+        subreddit_name = sub.get("subreddit_name", "").lower().strip()
+        sub_data = {**sub}  # Copy the original data
+        
+        # Add recommendation status
+        is_recommended = subreddit_name in recommended_subreddits
+        sub_data["is_recommended"] = is_recommended
+        
+        if is_recommended:
+            sub_data["recommendation_reason"] = recommended_subreddits[subreddit_name]["reason"]
+            sub_data["recommendation_rank"] = recommended_subreddits[subreddit_name]["rank"]
+        
+        # Ensure these fields exist and are properly formatted
+        sub_data["subscribers"] = sub.get("subscribers", 0)
+        sub_data["title"] = sub.get("title", "")
+        sub_data["public_description"] = sub.get("public_description", "")
+        sub_data["created_utc"] = sub.get("created_utc", 0)
+        sub_data["over18"] = sub.get("over18", False)
+        
+        enhanced_subreddits.append(sub_data)
+    
+    # Sort by recommendation rank first, then by subscriber count
+    enhanced_subreddits.sort(
+        key=lambda x: (
+            -1 if x.get("is_recommended", False) else 1,  # Recommended first
+            x.get("recommendation_rank", 999),             # Then by rank
+            -x.get("subscribers", 0)                       # Then by subscriber count (descending)
+        )
+    )
+    
     return {
         "search_id": search_id,
-        "validated_subreddits": search_data.get("validated_subreddits", []),
+        "validated_subreddits": enhanced_subreddits,
+        "recommended_subreddits": [sub for sub in enhanced_subreddits if sub.get("is_recommended", False)],
         "request": search_data.get("request"),
-        "total_events": len(search_data["events"])
+        "total_events": len(search_data["events"]),
+        "search_time": time.time() - search_data.get("timestamp", time.time())
     }
 
 @app.get("/healthcheck")
