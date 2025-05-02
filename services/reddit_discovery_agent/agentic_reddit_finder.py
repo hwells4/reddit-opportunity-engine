@@ -4,6 +4,7 @@ import argparse
 import time
 import uuid
 import json
+import asyncio
 from rich.console import Console
 from search_agent import SearchAgent
 from recommendation_agent import RecommendationAgent, main as recommendation_main
@@ -12,9 +13,9 @@ from subreddit_utils import clear_cache
 # Setup console for better output
 console = Console()
 
-def run_agentic_finder(product_type, problem_area, target_audience, additional_context=None):
+async def run_agentic_finder_async(product_type, problem_area, target_audience, additional_context=None):
     """
-    Run the full agentic Reddit discovery process.
+    Run the full agentic Reddit discovery process asynchronously.
     
     Args:
         product_type (str): Type of product
@@ -39,7 +40,7 @@ def run_agentic_finder(product_type, problem_area, target_audience, additional_c
         additional_context=additional_context
     )
     
-    validated_subreddits = search_agent.run()
+    validated_subreddits = await search_agent.run()
     
     # Step 2: Generate recommendations from the discovered subreddits
     console.print("[bold cyan]PHASE 2: GENERATING RECOMMENDATIONS[/bold cyan]")
@@ -75,6 +76,26 @@ def run_agentic_finder(product_type, problem_area, target_audience, additional_c
             console.print(f"  [bold]{i+1}.[/bold] {rec['subreddit_name']} ({rec.get('subscriber_count', 'Unknown')} subscribers)")
     
     return recommendations
+
+def run_agentic_finder(product_type, problem_area, target_audience, additional_context=None):
+    """
+    Run the full agentic Reddit discovery process.
+    
+    Args:
+        product_type (str): Type of product
+        problem_area (str): Problem area the product addresses
+        target_audience (str): Target audience for the product
+        additional_context (str): Any additional context
+    
+    Returns:
+        dict: Final recommendations
+    """
+    return asyncio.run(run_agentic_finder_async(
+        product_type=product_type,
+        problem_area=problem_area,
+        target_audience=target_audience,
+        additional_context=additional_context
+    ))
 
 def parse_arguments():
     """Parse command line arguments."""

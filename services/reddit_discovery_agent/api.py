@@ -59,9 +59,13 @@ async def cleanup_old_searches():
         for search_id in to_delete:
             del search_results[search_id]
 
-def run_search(search_id: str, product_type: str, problem_area: str, target_audience: str, additional_context: Optional[str] = None):
+async def run_search(search_id: str, product_type: str, problem_area: str, target_audience: str, additional_context: Optional[str] = None):
     """Run the search agent in the background and store events and results."""
     search_data = search_results[search_id]
+    
+    # Initialize validated_subreddits in the search data
+    search_data["validated_subreddits"] = []
+    
     agent = SearchAgent(
         product_type=product_type,
         problem_area=problem_area,
@@ -91,13 +95,23 @@ def run_search(search_id: str, product_type: str, problem_area: str, target_audi
                     search_data["status"] = "complete"
                     search_data["validated_subreddits"] = data.get("validated_subreddits", [])
                 
+                # Add subreddits to validated_subreddits list as they're validated
+                if event_type == "subreddit_validated" and data.get("status") == "valid":
+                    metadata = data.get("metadata", {})
+                    if metadata:
+                        # Avoid duplicates by checking if this subreddit is already in the list
+                        subreddit_name = metadata.get("subreddit_name", "").lower()
+                        if subreddit_name and not any(sub.get("subreddit_name", "").lower() == subreddit_name 
+                                                   for sub in search_data["validated_subreddits"]):
+                            search_data["validated_subreddits"].append(metadata)
+            
             return handler
             
         agent.register_callback(event_type, create_event_handler(event_type))
     
     try:
-        # Start the search
-        agent.run()
+        # Start the search using the async run method
+        await agent.run()
     except Exception as e:
         # Handle any exceptions
         search_data["status"] = "error"
@@ -125,13 +139,16 @@ async def start_search(request: SearchRequest, background_tasks: BackgroundTasks
     }
     
     # Start the search in the background
-    background_tasks.add_task(
-        run_search,
-        search_id,
-        request.product_type,
-        request.problem_area,
-        request.target_audience,
-        request.additional_context
+    # Create a task directly with asyncio instead of using background_tasks
+    # This gives us more control and allows for async operations
+    asyncio.create_task(
+        run_search(
+            search_id,
+            request.product_type,
+            request.problem_area,
+            request.target_audience,
+            request.additional_context
+        )
     )
     
     return {"search_id": search_id, "status": "started"}

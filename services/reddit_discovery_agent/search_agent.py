@@ -3,6 +3,8 @@ import time
 import random
 import uuid
 import json
+import asyncio
+import aiohttp
 from rich.console import Console
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -71,7 +73,7 @@ class SearchAgent:
                 except Exception as e:
                     console.print(f"[bold red]Error in callback for event '{event_name}': {str(e)}[/bold red]")
         
-    def search_web(self, query, max_results=5, max_retries=2):
+    async def search_web(self, query, max_results=5, max_retries=2):
         """Search the web using DuckDuckGo."""
         console.print(f"[yellow]🔎 Searching web for:[/yellow] {query}")
         self.trigger_event("query_executed", {"query": query})
@@ -125,7 +127,7 @@ class SearchAgent:
                 if "Ratelimit" in str(e) and retry_count < max_retries:
                     delay = base_delay * (2 ** retry_count) + random.uniform(0, 1)
                     console.print(f"[yellow]Search rate limited. Retrying in {delay:.2f} seconds...[/yellow]")
-                    time.sleep(delay)
+                    await asyncio.sleep(delay)
                     retry_count += 1
                     continue
                 else:
@@ -222,19 +224,85 @@ class SearchAgent:
                 "status": "invalid"
             })
             return None
+
+    async def validate_subreddit_async(self, subreddit_name, session=None):
+        """Async version: Validate a subreddit and get its metadata."""
+        # Clean the subreddit name (remove r/ prefix)
+        clean_name = subreddit_name[2:] if subreddit_name.startswith('r/') else subreddit_name
+        
+        # Get subreddit info
+        console.print(f"[yellow]Checking[/yellow] {subreddit_name}...")
+        
+        from subreddit_utils import get_subreddit_info_async
+        info = await get_subreddit_info_async(clean_name, session=session)
+        
+        if info:
+            # Successfully validated
+            metadata = {
+                "subreddit_name": f"r/{info.get('display_name', clean_name)}",
+                "title": info.get('title', ''),
+                "subscribers": info.get('subscribers', 0),
+                "public_description": info.get('public_description', ''),
+                "created_utc": info.get('created_utc', 0),
+                "over18": info.get('over18', False),
+                "active_user_count": info.get('active_user_count', 0),
+                "url": info.get('url', ''),
+                "verified": True
+            }
             
-    def validate_subreddits(self, subreddit_list):
-        """Validate a list of subreddits and get their metadata."""
+            subscriber_count = metadata['subscribers']
+            
+            # Check if the subreddit meets the minimum subscriber threshold
+            if subscriber_count < self.min_subscriber_threshold:
+                console.print(f"[yellow]✓ Validated but too small[/yellow] {subreddit_name} - {subscriber_count} subscribers (minimum {self.min_subscriber_threshold})")
+                self.trigger_event("subreddit_validated", {
+                    "subreddit": subreddit_name,
+                    "status": "too_small",
+                    "subscribers": subscriber_count,
+                    "min_threshold": self.min_subscriber_threshold
+                })
+                return None
+                
+            console.print(f"[green]✓ Validated[/green] {subreddit_name} - {subscriber_count} subscribers")
+            self.trigger_event("subreddit_validated", {
+                "subreddit": subreddit_name,
+                "status": "valid",
+                "metadata": metadata,
+                "is_niche": subscriber_count < self.niche_threshold
+            })
+            return metadata
+        else:
+            console.print(f"[red]✗ Could not validate[/red] {subreddit_name}")
+            self.trigger_event("subreddit_validated", {
+                "subreddit": subreddit_name,
+                "status": "invalid"
+            })
+            return None
+        
+    async def validate_subreddits(self, subreddit_list):
+        """Validate a list of subreddits and get their metadata using async processing."""
         validated = []
         
-        for subreddit in subreddit_list:
-            metadata = self.validate_subreddit(subreddit)
-            if metadata:
-                validated.append(metadata)
+        # Process subreddits in parallel with a concurrency limit
+        # to avoid overwhelming Reddit's API
+        concurrency_limit = 3
+        semaphore = asyncio.Semaphore(concurrency_limit)
+        
+        async def validate_with_semaphore(subreddit):
+            async with semaphore:
+                metadata = await self.validate_subreddit_async(subreddit)
+                if metadata:
+                    validated.append(metadata)
                 
-            # Brief delay to avoid rate limiting
-            time.sleep(0.5)
-            
+                # Brief delay to avoid rate limiting
+                await asyncio.sleep(0.5)
+        
+        # Create tasks for all subreddits
+        tasks = [validate_with_semaphore(subreddit) for subreddit in subreddit_list]
+        
+        # Run all validation tasks
+        await asyncio.gather(*tasks)
+        
         return validated
         
     def make_ai_call(self, prompt, reason="unspecified", model="google/gemini-2.5-flash-preview"):
@@ -498,7 +566,7 @@ Your response should be a valid JSON object with this structure:
             
             return default_response
     
-    def run(self):
+    async def run(self):
         """Run the search agent with an agentic loop."""
         console.print(f"\n[bold cyan]===== STARTING SEARCH AGENT RUN (ID: {run_id}) =====[/bold cyan]")
         
@@ -547,13 +615,15 @@ Your response should be a valid JSON object with this structure:
             for i, query in enumerate(search_queries):
                 console.print(f"  [bold]{i+1}.[/bold] {query}")
             
-            # Perform searches
+            # Perform searches in parallel using asyncio
             iteration_results = []
-            for query in search_queries:
-                results = self.search_web(query)
+            tasks = [self.search_web(query) for query in search_queries]
+            search_results_list = await asyncio.gather(*tasks)
+            
+            # Flatten results from all queries
+            for results in search_results_list:
                 iteration_results.extend(results)
                 self.all_search_results.extend(results)
-                time.sleep(1)  # Avoid rate limiting
             
             # Extract and validate subreddits from this iteration's results
             potential_subreddits = self.extract_subreddits_from_results(iteration_results)
@@ -577,7 +647,8 @@ Your response should be a valid JSON object with this structure:
                 "subreddits": new_to_validate
             })
             
-            new_validated = self.validate_subreddits(new_to_validate)
+            # Validate subreddits in parallel
+            new_validated = await self.validate_subreddits(new_to_validate)
             self.validated_subreddits.extend(new_validated)
             
             console.print(f"\n[bold green]Found {len(new_validated)} new valid subreddits in iteration {self.search_iterations + 1}[/bold green]")
@@ -666,4 +737,4 @@ if __name__ == "__main__":
         additional_context=args.additional_context
     )
     
-    validated_subreddits = agent.run() 
+    validated_subreddits = asyncio.run(agent.run()) 
