@@ -22,6 +22,8 @@ This tool helps entrepreneurs discover relevant Reddit communities (subreddits) 
 * **Niche Community Focus**: Prioritizes smaller, more focused communities over general ones
 * **Standard Output Format**: Enhanced metadata for better frontend display
 * **Reliable Search Method**: Uses Reddit's own JSON API directly for higher reliability and more consistent results
+* **Interactive Subreddit Selection**: Choose up to 8 subreddits from the results with an interactive UI
+* **Gumloop API Integration**: Send selected subreddits directly to Gumloop for in-depth analysis
 
 ## Setup
 
@@ -35,7 +37,7 @@ This tool helps entrepreneurs discover relevant Reddit communities (subreddits) 
 
 2. **Install Dependencies:**
    ```bash
-   pip install openai python-dotenv rich aiohttp
+   pip install openai python-dotenv rich aiohttp requests
    ```
 
 3. **Configure Environment Variables:**
@@ -43,9 +45,17 @@ This tool helps entrepreneurs discover relevant Reddit communities (subreddits) 
      ```bash
      touch .env
      ```
-   * Add your OpenRouter API key (get one from https://openrouter.ai/keys):
+   * Add your API keys:
      ```
+     # Required for AI functionality
      OPENROUTER_API_KEY="sk-or-v1-YOUR_ACTUAL_API_KEY_HERE"
+     
+     # Required for Gumloop integration
+     GUMLOOP_API_KEY="your_gumloop_api_key"
+     
+     # Optional - defaults are provided
+     GUMLOOP_USER_ID="your_user_id"
+     GUMLOOP_SAVED_ITEM_ID="your_saved_item_id"
      ```
 
 ### Docker Setup
@@ -73,8 +83,7 @@ python direct_openrouter.py \
 python search_agent.py \
   --product-type "Mobile game for casual players" \
   --problem-area "Player retention and monetization" \
-  --target-audience "Casual mobile gamers age 25-45" \
-  --output-file "results.json"
+  --target-audience "Casual mobile gamers age 25-45"
 ```
 
 You can also run it with Docker:
@@ -85,6 +94,24 @@ docker-compose run --rm reddit-discovery-agent python search_agent.py \
   --problem-area "Your problem area" \
   --target-audience "Your target audience"
 ```
+
+## Using the Interactive Selection UI
+
+The new agent includes an interactive selection UI that allows you to:
+
+1. View all discovered subreddits categorized by size (large, medium, niche)
+2. Navigate through the list using up/down arrows (or j/k keys)
+3. Select up to 8 subreddits using the spacebar
+4. Confirm your selection with Enter
+5. Provide your email address for receiving the analysis report
+6. Send the selected subreddits to Gumloop for analysis
+
+Navigation commands:
+- **↑/k**: Move up the list
+- **↓/j**: Move down the list
+- **Space**: Toggle selection for the current subreddit
+- **Enter**: Confirm your selection
+- **q**: Quit/cancel selection
 
 ## Using the API Service
 
@@ -135,24 +162,32 @@ The API includes automatic Swagger documentation at `http://localhost:8000/docs`
 
 ### New Agentic Implementation
 
-The agentic implementation works in two main phases with a feedback loop:
+The agentic implementation works in three main phases:
 
 #### Phase 1: Search Agent
 
 1. Starts with initial search queries based on user input
 2. For each iteration:
    - Performs Reddit API searches to find relevant subreddits
-   - Validates discovered subreddits
+   - Pre-filters obviously irrelevant subreddits using a banned list
+   - Uses AI to screen subreddits for relevance (requiring 90+ relevance score)
+   - Validates discovered subreddits (checking if they exist and meet subscriber thresholds)
    - Uses the "Think" tool to evaluate results quality
    - Dynamically generates new, more targeted search queries 
-   - Continues until finding sufficient niche communities or reaching max iterations
+   - Continues until finding sufficient niche communities or reaching max iterations (minimum 3)
 
-#### Phase 2: Recommendation Agent
+#### Phase 2: Selection & Analysis
 
-1. Takes the validated subreddits from the search agent
-2. Prioritizes smaller, niche communities (under 500K subscribers)
-3. Generates final recommendations with detailed metadata
-4. Provides search term suggestions and insights
+1. Presents all validated subreddits in an interactive UI
+2. User selects up to 8 subreddits for detailed analysis
+3. Formats selection for the Gumloop API
+4. Sends data for analysis (after user confirmation)
+
+#### Phase 3: Gumloop Analysis
+
+1. Gumloop receives the subreddit data along with product context
+2. Performs in-depth analysis of posts and comments
+3. Sends analysis report to the provided email address
 
 ## Response Format
 
@@ -160,27 +195,40 @@ The agentic implementation returns an enhanced JSON object:
 
 ```json
 {
-  "subreddit_recommendations": [
-    {
-      "subreddit_name": "r/example",
-      "subscriber_count": "100k",
-      "relevance_explanation": "This subreddit is relevant because...",
-      "content_type": "Discussions, project showcases, etc.",
-      "audience_alignment": "The audience consists of..."
-    }
-  ],
-  "search_suggestions": ["term1", "term2", "term3"],
-  "search_insights": "Analysis of why these recommendations are valuable...",
-  "metadata": {
-    "run_id": "abc123",
-    "search_iterations": 2,
-    "total_subreddits_found": 25,
-    "validated_subreddits_count": 18,
-    "execution_time_seconds": 45.2,
-    "timestamp": "2023-07-22 14:30:15"
-  }
+  "run_id": "abc123",
+  "iterations": 3,
+  "total_valid_subreddits": 15,
+  "api_calls": 5,
+  "categories": {
+    "large_communities": [
+      {
+        "name": "r/example1",
+        "title": "Example 1 Subreddit",
+        "subscribers": 1500000,
+        "description": "A community for...",
+        "url": "https://www.reddit.com/r/example1",
+        "created_utc": 1600000000,
+        "is_niche": false,
+        "active_users": 5000,
+        "selection_reason": "This subreddit is relevant because..."
+      }
+    ],
+    "medium_communities": [...],
+    "niche_communities": [...]
+  },
+  "all_subreddits": [...]
 }
 ```
+
+## Modular Architecture
+
+The new implementation uses a modular architecture for better maintainability:
+
+- **search_agent.py**: Main implementation with search, validation, and interactive UI
+- **reddit_search.py**: Contains Reddit search-specific functionalities
+- **subreddit_utils.py**: Utilities for validating and enriching subreddit data
+- **direct_openrouter.py**: Original implementation (for backward compatibility)
+- **api.py**: FastAPI service for HTTP-based access
 
 ## Deploying to Railway
 
@@ -202,22 +250,15 @@ The agentic implementation returns an enhanced JSON object:
    ```
 
 4. **Set Environment Variables**:
-   In the Railway dashboard, add your `OPENROUTER_API_KEY` as an environment variable.
+   In the Railway dashboard, add your environment variables:
+   - `OPENROUTER_API_KEY` (required)
+   - `GUMLOOP_API_KEY` (for Gumloop integration)
+   - `GUMLOOP_USER_ID` (optional)
+   - `GUMLOOP_SAVED_ITEM_ID` (optional)
 
 5. **Run as a Service**:
    Update the service settings in Railway to run the container with:
    ```bash
-   python search_agent.py  # Use new agentic implementation
+   python search_agent.py
    ```
-   
-## Architecture
-
-### Components
-
-- **search_agent.py**: Main entry point that orchestrates the overall process
-- **search_agent.py**: Handles the iterative discovery of subreddits with self-evaluation
-- **recommendation_agent.py**: Processes validated subreddits to produce final recommendations
-- **subreddit_utils.py**: Utilities for validating and enriching subreddit data
-- **direct_openrouter.py**: Original implementation (for backward compatibility)
-- **api.py**: FastAPI service for HTTP-based access
    

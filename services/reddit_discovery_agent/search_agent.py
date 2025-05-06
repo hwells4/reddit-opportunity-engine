@@ -6,10 +6,16 @@ import json
 import asyncio
 import aiohttp
 from rich.console import Console
+from rich.prompt import Prompt
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 from dotenv import load_dotenv
 from openai import OpenAI
 import re
+import requests
 from subreddit_utils import get_subreddit_info, clear_cache
+from reddit_search import find_subreddits
 
 # Remove import for deleted file
 # from simple_search import find_subreddits
@@ -44,121 +50,7 @@ FALLBACK_SUBREDDITS = [
     "r/sideproject", "r/programming", "r/growmybusiness", "r/dataisbeautiful"
 ]
 
-# Reddit search functions (previously in simple_search.py)
-async def search_reddit_json(query: str) -> list:
-    """Search Reddit directly using their JSON API for search"""
-    url = "https://www.reddit.com/search.json"
-    params = {
-        "q": query,
-        "sort": "relevance",
-        "t": "all",
-        "limit": 25,
-        "raw_json": 1
-    }
-    
-    headers = {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "application/json"
-    }
-    
-    print(f"Searching Reddit JSON API for: {query}")
-    
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url, params=params, headers=headers, timeout=15) as response:
-                if response.status != 200:
-                    print(f"Error: Reddit search returned status {response.status}")
-                    return []
-                
-                data = await response.json()
-                
-                # Extract subreddit mentions from the JSON response
-                subreddits = set()
-                
-                # Process the search results
-                if "data" in data and "children" in data["data"]:
-                    for post in data["data"]["children"]:
-                        post_data = post.get("data", {})
-                        
-                        # Get the subreddit from the post data
-                        if "subreddit_name_prefixed" in post_data:
-                            subreddits.add(post_data["subreddit_name_prefixed"])
-                        elif "subreddit" in post_data:
-                            subreddits.add(f"r/{post_data['subreddit']}")
-                
-                subreddit_list = list(subreddits)
-                print(f"Found {len(subreddit_list)} subreddits via Reddit JSON API")
-                return subreddit_list
-                
-        except Exception as e:
-            print(f"Error in Reddit search: {str(e)}")
-            return []
-
-async def search_top_subreddits(query: str) -> list:
-    """Get top subreddits from Reddit's directory"""
-    url = "https://www.reddit.com/subreddits.json"
-    
-    headers = {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "application/json"
-    }
-    
-    print(f"Getting popular subreddits related to: {query}")
-    
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url, headers=headers, timeout=15) as response:
-                if response.status != 200:
-                    print(f"Error: Subreddit directory returned status {response.status}")
-                    return []
-                
-                data = await response.json()
-                
-                # Extract subreddits from the directory
-                subreddits = set()
-                
-                # Process the results
-                if "data" in data and "children" in data["data"]:
-                    for subreddit in data["data"]["children"]:
-                        subreddit_data = subreddit.get("data", {})
-                        
-                        # Only include relevant subreddits based on query terms
-                        name = subreddit_data.get("display_name", "")
-                        title = subreddit_data.get("title", "")
-                        description = subreddit_data.get("public_description", "")
-                        
-                        # Simple relevance check
-                        combined_text = (name + " " + title + " " + description).lower()
-                        query_terms = query.lower().split()
-                        
-                        if any(term in combined_text for term in query_terms):
-                            subreddits.add(f"r/{name}")
-                
-                subreddit_list = list(subreddits)
-                print(f"Found {len(subreddit_list)} relevant subreddits in directory")
-                return subreddit_list
-                
-        except Exception as e:
-            print(f"Error in subreddit directory search: {str(e)}")
-            return []
-
-async def find_subreddits(query: str) -> list:
-    """Main function to find subreddits with fallbacks"""
-    print(f"Finding subreddits for query: {query}")
-    
-    # Try Reddit search JSON API first
-    reddit_results = await search_reddit_json(query)
-    if reddit_results:
-        return reddit_results
-    
-    # Then try top subreddits
-    top_results = await search_top_subreddits(query)
-    if top_results:
-        return top_results
-    
-    # Fallback to our hardcoded list
-    print("Using fallback subreddit list")
-    return FALLBACK_SUBREDDITS
+# Reddit search functions have been moved to reddit_search.py
 
 class SearchAgent:
     def __init__(self, product_type, problem_area, target_audience, additional_context=None):
@@ -169,13 +61,14 @@ class SearchAgent:
         
         self.search_iterations = 0
         self.max_iterations = 3
-        self.min_iterations = 2  # Added: Ensure at least 2 iterations run
+        self.min_iterations = 3  # Ensure at least 3 iterations run 
         self.all_search_results = []
         self.found_subreddits = set()
         self.validated_subreddits = []
-        self.niche_threshold = 500000  # Subreddits with fewer subscribers than this are considered niche
-        self.min_subscriber_threshold = 2500  # Minimum number of subscribers for a subreddit to be useful
-        self.max_validations_per_iteration = 10  # Increased: Allow more validations per iteration
+        self.subreddit_reasons = {}  # Store reasoning for each subreddit
+        self.niche_threshold = 750000  # Adjusted: Subreddits with fewer subscribers than this are considered niche
+        self.min_subscriber_threshold = 5000  # Adjusted: Minimum number of subscribers for a subreddit to be useful
+        self.max_validations_per_iteration = 15  # Increased: Allow more validations per iteration
         
         # Event system for streaming partial results
         self.callbacks = {
@@ -213,7 +106,7 @@ class SearchAgent:
         self.trigger_event("query_executed", {"query": query})
         
         try:
-            # Use our new direct search method
+            # Use the imported find_subreddits function 
             subreddits = await find_subreddits(query)
             
             if not subreddits:
@@ -300,37 +193,54 @@ class SearchAgent:
         # Convert list to comma-separated string for prompt
         subreddits_str = ", ".join(potential_subreddits)
         
+        # Remove banned subreddits list and filtering logic
+        filtered_subreddits = potential_subreddits
+        
+        # Convert remaining list to comma-separated string for prompt
+        subreddits_str = ", ".join(filtered_subreddits)
+        
         prompt = f"""
-You are a Reddit relevance expert with extremely high standards. Your task is to evaluate which subreddits from a given list are DIRECTLY relevant to a specific product/market. Be very strict and conservative in your evaluations.
+You are a Reddit relevance expert with EXTREMELY HIGH STANDARDS for determining relevance to a specific product market. 
+Your task is to evaluate which subreddits from a given list are DIRECTLY relevant to our specific product/market niche. 
+Be EXTREMELY STRICT in your evaluations, rejecting anything that isn't a perfect fit.
 
-Product information:
+<product_information>
 - Product Type: {self.product_type}
 - Problem Area: {self.problem_area}
 - Target Audience: {self.target_audience}
 - Additional Context: {self.additional_context or "None provided"}
+</product_information>
 
-Here is a list of subreddits that might be relevant: {subreddits_str}
+<subreddits_to_evaluate>
+{subreddits_str}
+</subreddits_to_evaluate>
 
-For each subreddit, evaluate if it's DIRECTLY relevant to our SPECIFIC product type, problem area, or target audience. 
-A subreddit is only relevant if it meets AT LEAST TWO of these criteria:
-1. Primarily contains our EXACT target users (not just general users who might overlap)
-2. Frequently discusses topics DIRECTLY related to our specific problem area
-3. Users would be IMMEDIATELY interested in our specific product type (not just tangentially related tools)
+<evaluation_criteria>
+A subreddit is ONLY relevant if it meets AT LEAST TWO of these criteria:
+1. The subreddit PRIMARILY consists of our EXACT target users (not just general users who might overlap)
+2. The subreddit FREQUENTLY has discussions DIRECTLY related to our specific problem area (market research, validation, product building)
+3. The subreddit's users would be IMMEDIATELY interested in our specific product type (AI market research tool)
+4. The subreddit EXPLICITLY focuses on topics like: startups, indie hacking, solopreneurs, product validation, marketing research
+</evaluation_criteria>
 
-EXTREMELY IMPORTANT:
-- Only include subreddits with a DIRECT, CLEAR connection to market research, product validation, or our target audience
-- REJECT any general interest subreddits, even if they might have some users who overlap with our audience
-- REJECT subreddits where the connection is speculative or requires multiple degrees of separation
-- Use a VERY high bar - if you're uncertain about relevance, mark it as irrelevant
-- DO NOT include subreddits just because they're technology-related or have entrepreneurs as a subset of users
+<strict_instructions>
+- Use a VERY HIGH bar (90+ on a 100-point scale) - only include subreddits with a DIRECT, OBVIOUS connection
+- Be EXTREMELY SUSPICIOUS of large subreddits (>1M subscribers) - they must have a very direct connection to be included
+- If a subreddit seems "maybe" relevant or "somewhat" relevant, REJECT IT
+- Only include subreddits that are a PERFECT FIT for our market and use case
+</strict_instructions>
 
-Your response should be a valid JSON object with this structure:
+First, carefully analyze each subreddit in <thinking> tags to determine relevance.
+
+Then respond ONLY with a valid JSON object in the following format:
+
+<json_format>
 {{
   "relevant_subreddits": [
     {{
       "name": "r/subredditname",
-      "relevance_score": 85,
-      "reason": "Brief explanation with SPECIFIC evidence of why this is DIRECTLY relevant"
+      "relevance_score": 92,
+      "reason": "SPECIFIC evidence of direct relevance with clear examples of how this perfectly fits our market/product"
     }}
   ],
   "irrelevant_subreddits": [
@@ -340,14 +250,17 @@ Your response should be a valid JSON object with this structure:
     }}
   ]
 }}
+</json_format>
 
-Only include subreddits with a relevance score of 80 or higher in the relevant_subreddits list.
+Only include subreddits with a relevance score of 90 or higher in the relevant_subreddits list.
+
+Your response must begin with the opening curly brace of the JSON object and end with the closing curly brace, with no other text outside these braces.
 """
 
-        console.print(f"[yellow]🔍 Screening {len(potential_subreddits)} subreddits for relevance...[/yellow]")
+        console.print(f"[yellow]🔍 Screening {len(filtered_subreddits)} subreddits for relevance...[/yellow]")
         self.trigger_event("screening_subreddits", {
-            "count": len(potential_subreddits),
-            "subreddits": potential_subreddits
+            "count": len(filtered_subreddits),
+            "subreddits": filtered_subreddits
         })
         
         # Make the API call
@@ -365,6 +278,9 @@ Only include subreddits with a relevance score of 80 or higher in the relevant_s
             # Extract just the names of relevant subreddits
             relevant_names = [sub["name"] for sub in relevant_subreddits]
             
+            # Create a mapping of subreddit names to their reasoning
+            self.subreddit_reasons = {sub["name"]: sub["reason"] for sub in relevant_subreddits}
+            
             # Log results
             console.print(f"[green]✓ Found {len(relevant_names)} relevant subreddits[/green]")
             for sub in relevant_subreddits:
@@ -372,10 +288,10 @@ Only include subreddits with a relevance score of 80 or higher in the relevant_s
                 
             if irrelevant_subreddits:
                 console.print(f"[red]✗ Filtered out {len(irrelevant_subreddits)} irrelevant subreddits[/red]")
-                for sub in irrelevant_subreddits[:3]:  # Show only first 3 to avoid clutter
+                for sub in irrelevant_subreddits[:5]:  # Show only first 5 to avoid clutter
                     console.print(f"  [dim red]✗ {sub['name']}[/dim red]: {sub['reason']}")
-                if len(irrelevant_subreddits) > 3:
-                    console.print(f"  [dim red]... and {len(irrelevant_subreddits) - 3} more[/dim red]")
+                if len(irrelevant_subreddits) > 5:
+                    console.print(f"  [dim red]... and {len(irrelevant_subreddits) - 5} more[/dim red]")
             
             self.trigger_event("subreddits_screened", {
                 "relevant_count": len(relevant_names),
@@ -395,8 +311,8 @@ Only include subreddits with a relevance score of 80 or higher in the relevant_s
             matches = re.findall(pattern, response)
             
             if matches:
-                # Filter to only include subreddits with score >= 80
-                relevant_subs = [name for name, score in matches if int(score) >= 80]
+                # Filter to only include subreddits with score >= 90
+                relevant_subs = [name for name, score in matches if int(score) >= 90]
                 
                 console.print(f"[yellow]⚠️ Extracted {len(relevant_subs)} relevant subreddits from broken JSON[/yellow]")
                 for sub in relevant_subs:
@@ -413,35 +329,36 @@ Only include subreddits with a relevance score of 80 or higher in the relevant_s
             console.print("[bold red]Failed to extract relevant subreddits from response[/bold red]")
             console.print("[yellow]⚠️ Using basic filtering heuristics instead[/yellow]")
             
-            # Basic heuristics to filter subreddits
-            marketing_related = []
-            non_marketing = []
+            # More targeted heuristics to filter subreddits
+            relevant_subreddits = []
             
-            marketing_terms = ["market research", "product validation", "startup", "entrepreneur", 
-                              "founder", "indiemaker", "indiehack", "saas", "product market fit", 
-                              "productized", "launch", "mvp", "growth", "copywriting"]
+            # Whitelist of keywords that indicate high relevance
+            highly_relevant_terms = [
+                "startup", "founder", "entrepreneur", "product", "business", "indiehack", 
+                "market", "research", "validation", "solopreneur", "launch", "saas", 
+                "bootstrap", "copywriting", "growth", "sideproject"
+            ]
             
-            for subreddit in potential_subreddits:
+            for subreddit in filtered_subreddits:
                 # Extract just the name without r/
                 name = subreddit[2:] if subreddit.startswith('r/') else subreddit
                 name = name.lower()
                 
-                # Check if any marketing term is in the subreddit name
-                if any(term in name for term in marketing_terms):
-                    marketing_related.append(subreddit)
-                else:
-                    non_marketing.append(subreddit)
+                # Check if any highly relevant term is in the subreddit name
+                if any(term in name for term in highly_relevant_terms):
+                    relevant_subreddits.append(subreddit)
+                    reason = f"Contains keyword: {[term for term in highly_relevant_terms if term in name][0]}"
+                    self.subreddit_reasons[subreddit] = reason
             
-            console.print(f"[yellow]Keeping {len(marketing_related)} marketing-related subreddits and filtering out {len(non_marketing)}[/yellow]")
+            console.print(f"[yellow]Keeping {len(relevant_subreddits)} relevant subreddits based on keyword matching[/yellow]")
             
             self.trigger_event("filtering_via_heuristics", {
-                "kept_count": len(marketing_related),
-                "filtered_count": len(non_marketing),
-                "kept": marketing_related,
-                "filtered": non_marketing
+                "kept_count": len(relevant_subreddits),
+                "filtered_count": len(filtered_subreddits) - len(relevant_subreddits),
+                "kept": relevant_subreddits
             })
             
-            return marketing_related
+            return relevant_subreddits
         
     def validate_subreddit(self, subreddit_name):
         """Validate a subreddit and get its metadata."""
@@ -463,7 +380,9 @@ Only include subreddits with a relevance score of 80 or higher in the relevant_s
                 "over18": info.get('over18', False),
                 "active_user_count": info.get('active_user_count', 0),
                 "url": info.get('url', ''),
-                "verified": True
+                "verified": True,
+                # Add the reasoning if available for this subreddit
+                "selection_reason": self.subreddit_reasons.get(f"r/{clean_name}", "Relevant subreddit for market research")
             }
             
             subscriber_count = metadata['subscribers']
@@ -517,7 +436,9 @@ Only include subreddits with a relevance score of 80 or higher in the relevant_s
                 "over18": info.get('over18', False),
                 "active_user_count": info.get('active_user_count', 0),
                 "url": info.get('url', ''),
-                "verified": True
+                "verified": True,
+                # Add the reasoning if available for this subreddit
+                "selection_reason": self.subreddit_reasons.get(f"r/{clean_name}", "Relevant subreddit for market research")
             }
             
             subscriber_count = metadata['subscribers']
@@ -871,7 +792,7 @@ Your response should be a valid JSON object with this structure:
                 "max_iterations": self.max_iterations
             })
             
-            # Generate search queries using AI if not the first iteration
+            # Generate search queries based on iteration
             if self.search_iterations == 0:
                 # First iteration: use basic queries to establish a baseline
                 search_queries = [
@@ -894,6 +815,7 @@ Your response should be a valid JSON object with this structure:
                     previous_results=self.validated_subreddits
                 )
             
+            # Display generated queries
             console.print(f"\n[bold cyan]Generated {len(search_queries)} search queries for this iteration[/bold cyan]")
             for i, query in enumerate(search_queries):
                 console.print(f"  [bold]{i+1}.[/bold] {query}")
@@ -912,6 +834,12 @@ Your response should be a valid JSON object with this structure:
             potential_subreddits = self.extract_subreddits_from_results(iteration_results)
             console.print(f"\n[bold cyan]Found {len(potential_subreddits)} potential subreddits in this iteration[/bold cyan]")
             
+            # Skip if no potential subreddits found
+            if not potential_subreddits:
+                console.print("[yellow]No potential subreddits found in this iteration. Continuing to next iteration.[/yellow]")
+                self.search_iterations += 1
+                continue
+            
             self.trigger_event("potential_subreddits_found", {
                 "iteration": self.search_iterations + 1,
                 "count": len(potential_subreddits),
@@ -920,6 +848,12 @@ Your response should be a valid JSON object with this structure:
             
             # Screen subreddits for relevance before validation
             relevant_subreddits = await self.screen_subreddits_for_relevance(potential_subreddits)
+            
+            # Skip if no relevant subreddits found
+            if not relevant_subreddits:
+                console.print("[yellow]No relevant subreddits found in this iteration. Continuing to next iteration.[/yellow]")
+                self.search_iterations += 1
+                continue
             
             # Only validate new subreddits we haven't validated before
             already_validated = {sub['subreddit_name'].lower() for sub in self.validated_subreddits}
@@ -955,7 +889,7 @@ Your response should be a valid JSON object with this structure:
                 sufficient_results = evaluation.get("found_sufficient_communities", False)
                 should_continue = evaluation.get("continue_searching", True)
                 
-                # Modified: Enforce minimum iteration count
+                # Enforce minimum iteration count
                 if sufficient_results and self.search_iterations + 1 < self.min_iterations:
                     console.print("\n[bold yellow]🔄 Found sufficient communities, but enforcing minimum iteration count.[/bold yellow]")
                     sufficient_results = False
@@ -1005,9 +939,9 @@ Your response should be a valid JSON object with this structure:
             sub_count = sub.get('subscribers', 0)
             if sub_count >= 1000000:  # Over 1M
                 large_subreddits.append(sub)
-            elif sub_count >= self.niche_threshold:  # 500K to 1M
+            elif sub_count >= self.niche_threshold:  # Over threshold but under 1M
                 medium_subreddits.append(sub)
-            else:  # Under 500K
+            else:  # Under threshold
                 niche_subreddits.append(sub)
                 
         # Sort each category by subscriber count
@@ -1015,32 +949,51 @@ Your response should be a valid JSON object with this structure:
         medium_subreddits.sort(key=lambda x: x.get('subscribers', 0), reverse=True)
         niche_subreddits.sort(key=lambda x: x.get('subscribers', 0), reverse=True)
         
-        # Print the categorized results
+        # Print the categorized results - simplified output
         console.print(f"\n[bold cyan]===== SUBREDDIT RECOMMENDATIONS =====[/bold cyan]")
         
-        # Large communities
-        console.print(f"\n[bold yellow]LARGE COMMUNITIES ({len(large_subreddits)})[/bold yellow]")
-        for i, sub in enumerate(large_subreddits[:7]):  # Show top 7 max
-            console.print(f"  [bold]{i+1}.[/bold] {sub['subreddit_name']} ({sub.get('subscribers', 'Unknown'):,} subscribers)")
-            console.print(f"     [dim]{sub.get('title', 'No title')}[/dim]")
-            if sub.get('public_description'):
-                console.print(f"     [dim]{sub.get('public_description', '')[:100]}{'...' if len(sub.get('public_description', '')) > 100 else ''}[/dim]")
+        # Display a summary table for easier viewing
+        table = Table(title="Validated Subreddits by Category", show_header=True, header_style="bold")
+        table.add_column("Subreddit", style="cyan")
+        table.add_column("Subscribers", justify="right")
+        table.add_column("Category", style="yellow")
+        table.add_column("Description")
+        
+        # Add large subreddits
+        if large_subreddits:
+            console.print(f"\n[bold yellow]LARGE COMMUNITIES ({len(large_subreddits)})[/bold yellow]")
+            for sub in large_subreddits:
+                table.add_row(
+                    sub['subreddit_name'],
+                    f"{sub.get('subscribers', 0):,}",
+                    "Large",
+                    sub.get('title', 'No title')[:60] + ('...' if len(sub.get('title', '')) > 60 else '')
+                )
                 
-        # Medium communities
-        console.print(f"\n[bold green]MEDIUM COMMUNITIES ({len(medium_subreddits)})[/bold green]")
-        for i, sub in enumerate(medium_subreddits[:7]):  # Show top 7 max
-            console.print(f"  [bold]{i+1}.[/bold] {sub['subreddit_name']} ({sub.get('subscribers', 'Unknown'):,} subscribers)")
-            console.print(f"     [dim]{sub.get('title', 'No title')}[/dim]")
-            if sub.get('public_description'):
-                console.print(f"     [dim]{sub.get('public_description', '')[:100]}{'...' if len(sub.get('public_description', '')) > 100 else ''}[/dim]")
+        # Add medium subreddits
+        if medium_subreddits:
+            console.print(f"\n[bold green]MEDIUM COMMUNITIES ({len(medium_subreddits)})[/bold green]")
+            for sub in medium_subreddits:
+                table.add_row(
+                    sub['subreddit_name'],
+                    f"{sub.get('subscribers', 0):,}",
+                    "Medium",
+                    sub.get('title', 'No title')[:60] + ('...' if len(sub.get('title', '')) > 60 else '')
+                )
                 
-        # Niche communities
-        console.print(f"\n[bold cyan]NICHE COMMUNITIES ({len(niche_subreddits)})[/bold cyan]")
-        for i, sub in enumerate(niche_subreddits[:10]):  # Show more niche communities
-            console.print(f"  [bold]{i+1}.[/bold] {sub['subreddit_name']} ({sub.get('subscribers', 'Unknown'):,} subscribers)")
-            console.print(f"     [dim]{sub.get('title', 'No title')}[/dim]")
-            if sub.get('public_description'):
-                console.print(f"     [dim]{sub.get('public_description', '')[:100]}{'...' if len(sub.get('public_description', '')) > 100 else ''}[/dim]")
+        # Add niche subreddits
+        if niche_subreddits:
+            console.print(f"\n[bold cyan]NICHE COMMUNITIES ({len(niche_subreddits)})[/bold cyan]")
+            for sub in niche_subreddits:
+                table.add_row(
+                    sub['subreddit_name'],
+                    f"{sub.get('subscribers', 0):,}",
+                    "Niche",
+                    sub.get('title', 'No title')[:60] + ('...' if len(sub.get('title', '')) > 60 else '')
+                )
+        
+        # Display the table
+        console.print(table)
         
         # Display count of API calls made
         console.print(f"\n[bold cyan]Total API calls made: {api_call_count}[/bold cyan]")
@@ -1061,6 +1014,23 @@ Your response should be a valid JSON object with this structure:
         
         self.trigger_event("search_complete", result)
         
+        # Ask if the user wants to select subreddits for analysis
+        console.print("\n[bold cyan]Would you like to select subreddits for analysis?[/bold cyan]")
+        should_select = Prompt.ask("Select subreddits now?", choices=["y", "n"], default="y")
+        
+        if should_select.lower() == "y":
+            # Import the subreddit_selection module here to avoid circular imports
+            from subreddit_selection import select_subreddits_for_analysis
+            
+            # Use the subreddit selection UI from the separate module
+            select_subreddits_for_analysis(
+                result, 
+                self.target_audience,
+                self.problem_area,
+                self.product_type,
+                self.additional_context
+            )
+        
         # Clear cache
         clear_cache()
         
@@ -1076,12 +1046,23 @@ Your response should be a valid JSON object with this structure:
             "url": subreddit_data.get('url', ''),
             "created_utc": subreddit_data.get('created_utc', 0),
             "is_niche": subreddit_data.get('subscribers', 0) < self.niche_threshold,
-            "active_users": subreddit_data.get('active_user_count', 0)
+            "active_users": subreddit_data.get('active_user_count', 0),
+            "selection_reason": subreddit_data.get('selection_reason', "Relevant community for market research")
         }
 
 # Simple example of how to use this agent
 if __name__ == "__main__":
     import argparse
+    
+    # Check for required environment variables
+    if not os.getenv("OPENROUTER_API_KEY"):
+        console.print("[bold red]Error: OPENROUTER_API_KEY is not set. This is required for AI functionality.[/bold red]")
+        console.print("[yellow]Please set this in your .env file or environment and try again.[/yellow]")
+        exit(1)
+        
+    # Warn about optional environment variables
+    if not os.getenv("GUMLOOP_API_KEY"):
+        console.print("[yellow]Warning: GUMLOOP_API_KEY is not set. You won't be able to send analysis requests.[/yellow]")
     
     parser = argparse.ArgumentParser(description='Find niche subreddits through iterative search.')
     parser.add_argument('--product-type', type=str, required=True, help='Type of product')
