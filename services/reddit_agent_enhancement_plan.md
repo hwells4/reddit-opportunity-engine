@@ -6,7 +6,34 @@ The Reddit Opportunity Engine currently finds subreddits based on user inputs bu
 2. A "Think" tool for self-evaluation
 3. Standardized output formatting for frontend display
 
-## Proposed Enhancements
+## Implemented Enhancements
+
+### 1. Subreddit Metadata Enrichment ✅
+- **Implemented**: Added real-time subreddit validation and metadata collection
+- **Details**:
+  - Created a dedicated utility (`subreddit_utils.py`) for fetching accurate subreddit metadata
+  - Direct integration with Reddit's JSON API endpoints
+  - Collects accurate subscriber counts, descriptions, creation dates, and activity metrics
+  - Validates subreddit existence before recommending to users
+  - Properly handles rate limits using exponential backoff and caching
+
+### 2. Efficient Caching System ✅
+- **Implemented**: Added in-memory caching to improve performance and reduce API calls
+- **Details**:
+  - Implemented in-memory cache for subreddit data
+  - Prevents redundant API calls for previously validated subreddits
+  - Properly clears cache after each run to prevent memory buildup
+  - Added randomized delays between requests to avoid rate limiting
+
+### 3. AI Prompt Enhancement ✅
+- **Implemented**: Refactored system to provide validated metadata to AI during reasoning
+- **Details**:
+  - AI now receives accurate subscriber counts and descriptions during the decision process
+  - Modified prompt to encourage prioritizing validated subreddits with higher relevance
+  - Added explicit guidance for the AI to consider subreddit size, activity, and topic relevance
+  - Comprehensive logging of AI calls for improved debugging and monitoring
+
+## Proposed Future Enhancements
 
 ### 1. Implement Agentic Loop
 - **Purpose**: Continue searching until at least 5 relevant, niche subreddits are found
@@ -24,20 +51,23 @@ The Reddit Opportunity Engine currently finds subreddits based on user inputs bu
   - Add reasoning capability to explain why certain subreddits were selected or rejected
 
 ### 3. Standardize Output Format
-- **Purpose**: Create consistent, structured output for frontend display
-- **Implementation**:
+- **Partially Implemented** ✅: Added metadata fields to output
+- **Remaining Tasks**:
   - Enhance existing Pydantic models for frontend compatibility
-  - Add metadata fields (search time, iterations, confidence scores)
+  - Add metadata fields for search time and iterations
   - Structure output for easy parsing in frontend components
-  - Implement JSON serialization with consistent schema
 
 ### 4. Performance Optimization
-- **Purpose**: Ensure agent completes within 15-20 seconds timeframe
-- **Implementation**:
-  - Optimize search queries for efficiency
+- **Partially Implemented** ✅: Added caching and rate limit handling
+- **Remaining Tasks**:
   - Implement parallel processing for web searches
+  - Further optimize search queries for efficiency
   - Add timeout mechanisms to prevent excessive runtime
-  - Cache intermediate results to avoid redundant processing
+
+## Docker Configuration Notes
+- The API service uses `restart: unless-stopped` to ensure continuous availability
+- The CLI agent should be run using `docker-compose run` to prevent continuous restarts
+- Example command: `docker-compose run reddit-discovery-agent python direct_openrouter.py --product-type "..." --problem-area "..." --target-audience "..."`
 
 ## Open Questions
 1. What specific criteria define a "niche" subreddit vs. a general one?

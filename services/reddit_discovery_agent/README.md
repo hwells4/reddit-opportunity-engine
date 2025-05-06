@@ -1,11 +1,11 @@
 # Reddit Opportunity Engine
 
-This tool helps entrepreneurs discover relevant Reddit communities (subreddits) for market research and product idea validation based on a defined focus area. It uses OpenRouter to access powerful AI models like Google's Gemini 2.5 Flash Preview, combined with real-time DuckDuckGo search to find and recommend the most relevant subreddits.
+This tool helps entrepreneurs discover relevant Reddit communities (subreddits) for market research and product idea validation based on a defined focus area. It uses OpenRouter to access powerful AI models like Google's Gemini 2.5 Flash Preview, combined with direct Reddit API access to find and recommend the most relevant subreddits.
 
 ## Features
 
 * Takes user input describing a product idea, problem area, and target audience
-* Performs real-time web searches using DuckDuckGo to find current information
+* Performs direct Reddit searches using Reddit's JSON API to find current information
 * Returns a structured list of 3-5 recommended subreddits with details:
   * Name (r/...)
   * Approximate Subscriber Count
@@ -21,6 +21,7 @@ This tool helps entrepreneurs discover relevant Reddit communities (subreddits) 
 * **Search Query Generation**: AI dynamically generates search queries based on previous results
 * **Niche Community Focus**: Prioritizes smaller, more focused communities over general ones
 * **Standard Output Format**: Enhanced metadata for better frontend display
+* **Reliable Search Method**: Uses Reddit's own JSON API directly for higher reliability and more consistent results
 
 ## Setup
 
@@ -34,7 +35,7 @@ This tool helps entrepreneurs discover relevant Reddit communities (subreddits) 
 
 2. **Install Dependencies:**
    ```bash
-   pip install openai duckduckgo-search python-dotenv rich
+   pip install openai python-dotenv rich aiohttp
    ```
 
 3. **Configure Environment Variables:**
@@ -69,7 +70,7 @@ python direct_openrouter.py \
 ### New Agentic Implementation
 
 ```bash
-python agentic_reddit_finder.py \
+python search_agent.py \
   --product-type "Mobile game for casual players" \
   --problem-area "Player retention and monetization" \
   --target-audience "Casual mobile gamers age 25-45" \
@@ -79,7 +80,7 @@ python agentic_reddit_finder.py \
 You can also run it with Docker:
 
 ```bash
-docker-compose run --rm reddit-discovery-agent python agentic_reddit_finder.py \
+docker-compose run --rm reddit-discovery-agent python search_agent.py \
   --product-type "Your product" \
   --problem-area "Your problem area" \
   --target-audience "Your target audience"
@@ -127,7 +128,7 @@ The API includes automatic Swagger documentation at `http://localhost:8000/docs`
 
 1. The tool accepts parameters describing your product, problem area, and target audience
 2. It generates static search queries based on your input
-3. Performs real-time web searches through DuckDuckGo
+3. Performs Reddit API searches through their JSON API
 4. Extracts and validates subreddits from search results
 5. Sends the search results along with your parameters to the Gemini model via OpenRouter
 6. Processes the response and returns structured recommendations
@@ -140,7 +141,7 @@ The agentic implementation works in two main phases with a feedback loop:
 
 1. Starts with initial search queries based on user input
 2. For each iteration:
-   - Performs web searches to find relevant subreddits
+   - Performs Reddit API searches to find relevant subreddits
    - Validates discovered subreddits
    - Uses the "Think" tool to evaluate results quality
    - Dynamically generates new, more targeted search queries 
@@ -206,14 +207,14 @@ The agentic implementation returns an enhanced JSON object:
 5. **Run as a Service**:
    Update the service settings in Railway to run the container with:
    ```bash
-   python agentic_reddit_finder.py  # Use new agentic implementation
+   python search_agent.py  # Use new agentic implementation
    ```
    
 ## Architecture
 
 ### Components
 
-- **agentic_reddit_finder.py**: Main entry point that orchestrates the overall process
+- **search_agent.py**: Main entry point that orchestrates the overall process
 - **search_agent.py**: Handles the iterative discovery of subreddits with self-evaluation
 - **recommendation_agent.py**: Processes validated subreddits to produce final recommendations
 - **subreddit_utils.py**: Utilities for validating and enriching subreddit data

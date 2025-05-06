@@ -8,9 +8,11 @@ import aiohttp
 from rich.console import Console
 from dotenv import load_dotenv
 from openai import OpenAI
-from duckduckgo_search import DDGS
 import re
 from subreddit_utils import get_subreddit_info, clear_cache
+
+# Add import for our new direct search module
+from simple_search import find_subreddits
 
 # Load environment variables
 load_dotenv()
@@ -37,11 +39,13 @@ class SearchAgent:
         
         self.search_iterations = 0
         self.max_iterations = 3
+        self.min_iterations = 2  # Added: Ensure at least 2 iterations run
         self.all_search_results = []
         self.found_subreddits = set()
         self.validated_subreddits = []
         self.niche_threshold = 500000  # Subreddits with fewer subscribers than this are considered niche
         self.min_subscriber_threshold = 2500  # Minimum number of subscribers for a subreddit to be useful
+        self.max_validations_per_iteration = 3  # Added: Limit validations per iteration
         
         # Event system for streaming partial results
         self.callbacks = {
@@ -73,92 +77,77 @@ class SearchAgent:
                 except Exception as e:
                     console.print(f"[bold red]Error in callback for event '{event_name}': {str(e)}[/bold red]")
         
-    async def search_web(self, query, max_results=5, max_retries=2):
-        """Search the web using DuckDuckGo."""
+    async def search_web(self, query, max_results=5, max_retries=3):
+        """Search using our direct Reddit JSON API method instead of DuckDuckGo."""
         console.print(f"[yellow]🔎 Searching web for:[/yellow] {query}")
         self.trigger_event("query_executed", {"query": query})
         
-        retry_count = 0
-        base_delay = 2
-        
-        while retry_count <= max_retries:
-            try:
-                with DDGS() as ddgs:
-                    results = list(ddgs.text(query, max_results=max_results))
+        try:
+            # Use our new direct search method
+            subreddits = await find_subreddits(query)
+            
+            if not subreddits:
+                console.print("[yellow]No subreddits found[/yellow]")
+                self.trigger_event("search_results", {"query": query, "count": 0, "results": []})
+                return []
                 
-                if not results:
-                    console.print("[yellow]No results found[/yellow]")
-                    self.trigger_event("search_results", {"query": query, "count": 0, "results": []})
-                    return []
-                    
-                console.print(f"[green]Found {len(results)} results[/green]")
-                
-                # Add more detailed output about the search results
-                console.print("[cyan]Search result details:[/cyan]")
-                for i, result in enumerate(results):
-                    title = result.get('title', 'No title')
-                    # Truncate long titles for display clarity
-                    if len(title) > 70:
-                        title = title[:67] + "..."
-                        
-                    # Check if this result likely mentions a subreddit
-                    body = result.get('body', '')
-                    subreddit_mentions = []
-                    # Simple regex to find r/subreddit mentions
-                    subreddit_pattern = r'r/[a-zA-Z0-9_]{3,21}'  # Reddit's subreddit name rules
-                    matches = re.findall(subreddit_pattern, body.lower() + " " + title.lower())
-                    if matches:
-                        subreddit_mentions = list(set(matches))[:3]  # Limit to first 3 unique mentions
-                        
-                    console.print(f"  [bold]{i+1}.[/bold] {title}")
-                    if subreddit_mentions:
-                        console.print(f"     [green]Potential subreddits mentioned:[/green] {', '.join(subreddit_mentions)}")
-                
-                self.trigger_event("search_results", {
-                    "query": query, 
-                    "count": len(results), 
-                    "results": results
+            console.print(f"[green]Found {len(subreddits)} subreddits[/green]")
+            
+            # Format results to match the expected structure from DuckDuckGo
+            results = []
+            for subreddit in subreddits:
+                results.append({
+                    "title": f"Subreddit: {subreddit}",
+                    "href": f"https://www.reddit.com/{subreddit}",
+                    "body": f"Found in search results for '{query}'",
                 })
-                
-                return results
-                
-            except Exception as e:
-                # Check if it's a rate limit error
-                if "Ratelimit" in str(e) and retry_count < max_retries:
-                    delay = base_delay * (2 ** retry_count) + random.uniform(0, 1)
-                    console.print(f"[yellow]Search rate limited. Retrying in {delay:.2f} seconds...[/yellow]")
-                    await asyncio.sleep(delay)
-                    retry_count += 1
-                    continue
-                else:
-                    console.print(f"[bold red]Error searching web:[/bold red] {str(e)}")
-                    self.trigger_event("search_results", {"query": query, "error": str(e), "count": 0, "results": []})
-                    return []
-        
-        # If we exhausted retries
-        console.print(f"[bold red]Failed to search after {max_retries} retries[/bold red]")
-        self.trigger_event("search_results", {"query": query, "error": "Max retries exceeded", "count": 0, "results": []})
-        return []
+            
+            # Display the found subreddits
+            console.print("[cyan]Subreddits found:[/cyan]")
+            for i, subreddit in enumerate(subreddits):
+                console.print(f"  [bold]{i+1}.[/bold] {subreddit}")
+            
+            self.trigger_event("search_results", {
+                "query": query, 
+                "count": len(results), 
+                "results": results
+            })
+            
+            return results
+            
+        except Exception as e:
+            console.print(f"[bold red]Error searching web:[/bold red] {str(e)}")
+            self.trigger_event("search_results", {"query": query, "error": str(e), "count": 0, "results": []})
+            return []
         
     def extract_subreddits_from_results(self, search_results):
         """Extract potential subreddit mentions from search results."""
         subreddit_mentions = {}
-        subreddit_pattern = r'r/[a-zA-Z0-9_]{3,21}'  # Reddit's subreddit name rules
         
         for result in search_results:
             title = result.get('title', '')
-            body = result.get('body', '')
-            content = title + " " + body
             
-            # Find all subreddit mentions
-            matches = re.findall(subreddit_pattern, content.lower())
-            
-            # Count occurrences to prioritize frequently mentioned subreddits
-            for match in matches:
-                if match in subreddit_mentions:
-                    subreddit_mentions[match] += 1
+            # Our results already have the subreddit name in the title field
+            if title.startswith("Subreddit: r/"):
+                subreddit = title.replace("Subreddit: ", "")
+                if subreddit in subreddit_mentions:
+                    subreddit_mentions[subreddit] += 1
                 else:
-                    subreddit_mentions[match] = 1
+                    subreddit_mentions[subreddit] = 1
+            else:
+                # Also look for subreddit mentions in the body
+                body = result.get('body', '')
+                content = title + " " + body
+                
+                # Find all subreddit mentions
+                matches = re.findall(r'r/[a-zA-Z0-9_]{3,21}', content.lower())
+                
+                # Count occurrences
+                for match in matches:
+                    if match in subreddit_mentions:
+                        subreddit_mentions[match] += 1
+                    else:
+                        subreddit_mentions[match] = 1
         
         # Sort by frequency and convert to list
         sorted_mentions = sorted(subreddit_mentions.items(), key=lambda x: x[1], reverse=True)
@@ -172,6 +161,154 @@ class SearchAgent:
             self.trigger_event("subreddit_found", {"subreddit": subreddit, "source": "search_results"})
             
         return extracted_subreddits
+        
+    async def screen_subreddits_for_relevance(self, potential_subreddits):
+        """Use AI to screen subreddits for relevance before validation."""
+        if not potential_subreddits:
+            return []
+            
+        # Convert list to comma-separated string for prompt
+        subreddits_str = ", ".join(potential_subreddits)
+        
+        prompt = f"""
+You are a Reddit relevance expert. Your task is to evaluate which subreddits from a given list are truly relevant to a specific product/market.
+
+Product information:
+- Product Type: {self.product_type}
+- Problem Area: {self.problem_area}
+- Target Audience: {self.target_audience}
+- Additional Context: {self.additional_context or "None provided"}
+
+Here is a list of subreddits that might be relevant: {subreddits_str}
+
+For each subreddit, evaluate if it's directly relevant to our product type, problem area, or target audience. 
+Consider whether the community would:
+1. Contain our target users
+2. Discuss topics related to our problem area
+3. Be interested in our product type
+
+IMPORTANT:
+- Do NOT include general interest subreddits that aren't directly focused on marketing, research, or our target audience
+- Do NOT include subreddits that are just product categories (like r/mechanicalkeyboards or r/skincare)
+- ONLY include subreddits where we're likely to find discussions related to our product purpose
+
+Your response should be a valid JSON object with this structure:
+{{
+  "relevant_subreddits": [
+    {{
+      "name": "r/subredditname",
+      "relevance_score": 85,
+      "reason": "Brief explanation of why this is relevant to our product/audience"
+    }}
+  ],
+  "irrelevant_subreddits": [
+    {{
+      "name": "r/subredditname",
+      "reason": "Brief explanation of why this isn't relevant enough"
+    }}
+  ]
+}}
+
+Only include subreddits with a relevance score of 70 or higher in the relevant_subreddits list.
+"""
+
+        console.print(f"[yellow]🔍 Screening {len(potential_subreddits)} subreddits for relevance...[/yellow]")
+        self.trigger_event("screening_subreddits", {
+            "count": len(potential_subreddits),
+            "subreddits": potential_subreddits
+        })
+        
+        # Make the API call
+        response = self.make_ai_call(
+            prompt=prompt,
+            reason=f"Screen subreddits for relevance",
+            model="google/gemini-2.5-flash-preview"
+        )
+        
+        try:
+            parsed_response = json.loads(response)
+            relevant_subreddits = parsed_response.get("relevant_subreddits", [])
+            irrelevant_subreddits = parsed_response.get("irrelevant_subreddits", [])
+            
+            # Extract just the names of relevant subreddits
+            relevant_names = [sub["name"] for sub in relevant_subreddits]
+            
+            # Log results
+            console.print(f"[green]✓ Found {len(relevant_names)} relevant subreddits[/green]")
+            for sub in relevant_subreddits:
+                console.print(f"  [bold green]✓ {sub['name']}[/bold green] (Score: {sub['relevance_score']}): {sub['reason']}")
+                
+            if irrelevant_subreddits:
+                console.print(f"[red]✗ Filtered out {len(irrelevant_subreddits)} irrelevant subreddits[/red]")
+                for sub in irrelevant_subreddits[:3]:  # Show only first 3 to avoid clutter
+                    console.print(f"  [dim red]✗ {sub['name']}[/dim red]: {sub['reason']}")
+                if len(irrelevant_subreddits) > 3:
+                    console.print(f"  [dim red]... and {len(irrelevant_subreddits) - 3} more[/dim red]")
+            
+            self.trigger_event("subreddits_screened", {
+                "relevant_count": len(relevant_names),
+                "irrelevant_count": len(irrelevant_subreddits),
+                "relevant_subreddits": relevant_subreddits,
+                "irrelevant_subreddits": irrelevant_subreddits
+            })
+            
+            return relevant_names
+            
+        except json.JSONDecodeError:
+            console.print("[bold red]Error: AI response was not valid JSON[/bold red]")
+            
+            # Attempt to extract relevant subreddits using regex
+            # Pattern to match relevant subreddits with scores
+            pattern = r'"name": "(r/[a-zA-Z0-9_]+)".*?"relevance_score": (\d+)'
+            matches = re.findall(pattern, response)
+            
+            if matches:
+                # Filter to only include subreddits with score >= 70
+                relevant_subs = [name for name, score in matches if int(score) >= 70]
+                
+                console.print(f"[yellow]⚠️ Extracted {len(relevant_subs)} relevant subreddits from broken JSON[/yellow]")
+                for sub in relevant_subs:
+                    console.print(f"  [bold yellow]✓ {sub}[/bold yellow]")
+                
+                self.trigger_event("subreddits_extracted_from_broken_json", {
+                    "count": len(relevant_subs),
+                    "subreddits": relevant_subs
+                })
+                
+                return relevant_subs
+                
+            # If extraction also fails, log the error and fall back to a filtered approach
+            console.print("[bold red]Failed to extract relevant subreddits from response[/bold red]")
+            console.print("[yellow]⚠️ Using basic filtering heuristics instead[/yellow]")
+            
+            # Basic heuristics to filter subreddits
+            marketing_related = []
+            non_marketing = []
+            
+            marketing_terms = ["market", "content", "digital", "advertis", "seo", "copy", "brand", 
+                               "agency", "business", "startup", "saas", "growth", "product", "social"]
+            
+            for subreddit in potential_subreddits:
+                # Extract just the name without r/
+                name = subreddit[2:] if subreddit.startswith('r/') else subreddit
+                name = name.lower()
+                
+                # Check if any marketing term is in the subreddit name
+                if any(term in name for term in marketing_terms):
+                    marketing_related.append(subreddit)
+                else:
+                    non_marketing.append(subreddit)
+            
+            console.print(f"[yellow]Keeping {len(marketing_related)} marketing-related subreddits and filtering out {len(non_marketing)}[/yellow]")
+            
+            self.trigger_event("filtering_via_heuristics", {
+                "kept_count": len(marketing_related),
+                "filtered_count": len(non_marketing),
+                "kept": marketing_related,
+                "filtered": non_marketing
+            })
+            
+            return marketing_related
         
     def validate_subreddit(self, subreddit_name):
         """Validate a subreddit and get its metadata."""
@@ -283,6 +420,15 @@ class SearchAgent:
         """Validate a list of subreddits and get their metadata using async processing."""
         validated = []
         
+        # Limit the number of subreddits to validate per iteration
+        limited_list = subreddit_list[:self.max_validations_per_iteration]
+        if len(subreddit_list) > self.max_validations_per_iteration:
+            console.print(f"[yellow]Limiting validation to {self.max_validations_per_iteration} subreddits this iteration[/yellow]")
+            self.trigger_event("validation_limited", {
+                "original_count": len(subreddit_list),
+                "limited_count": len(limited_list)
+            })
+        
         # Process subreddits in parallel with a concurrency limit
         # to avoid overwhelming Reddit's API
         concurrency_limit = 3
@@ -298,7 +444,7 @@ class SearchAgent:
                 await asyncio.sleep(0.5)
         
         # Create tasks for all subreddits
-        tasks = [validate_with_semaphore(subreddit) for subreddit in subreddit_list]
+        tasks = [validate_with_semaphore(subreddit) for subreddit in limited_list]
         
         # Run all validation tasks
         await asyncio.gather(*tasks)
@@ -512,6 +658,10 @@ Please analyze:
 4. If another search iteration would likely yield better results
 5. What search strategy to use next if we continue
 
+IMPORTANT: Focus on communities that are DIRECTLY related to product validation, startup founders, marketing, 
+and copywriting. Do NOT include general technology subreddits (like r/Android, r/Apple) unless there is 
+strong evidence they discuss product development and validation frequently.
+
 Your response should be a valid JSON object with this structure:
 {{
   "evaluation": "Detailed analysis of search results quality",
@@ -592,12 +742,12 @@ Your response should be a valid JSON object with this structure:
             if self.search_iterations == 0:
                 # First iteration: use basic queries to establish a baseline
                 search_queries = [
-                    f"reddit communities for {self.product_type}",
-                    f"subreddits for {self.problem_area}",
-                    f"best reddit communities for {self.target_audience}",
-                    f"niche subreddits for {self.target_audience}",
-                    f"small specialized subreddits {self.product_type}",
-                    f"top subreddits {self.product_type} {self.target_audience}"
+                    f"best subreddits for {self.product_type} founders",
+                    f"niche subreddits for {self.problem_area}",
+                    f"reddit communities specifically for {self.target_audience}",
+                    f"subreddits dedicated to {self.problem_area} for {self.target_audience}",
+                    f"specialized {self.product_type} subreddits under 100k",
+                    f"trending subreddits for {self.product_type} {self.problem_area}"
                 ]
                 
                 self.trigger_event("using_default_queries", {
@@ -635,9 +785,12 @@ Your response should be a valid JSON object with this structure:
                 "subreddits": potential_subreddits
             })
             
+            # Screen subreddits for relevance before validation
+            relevant_subreddits = await self.screen_subreddits_for_relevance(potential_subreddits)
+            
             # Only validate new subreddits we haven't validated before
             already_validated = {sub['subreddit_name'].lower() for sub in self.validated_subreddits}
-            new_to_validate = [sub for sub in potential_subreddits if sub.lower() not in already_validated]
+            new_to_validate = [sub for sub in relevant_subreddits if sub.lower() not in already_validated]
             
             console.print(f"\n[bold cyan]Validating {len(new_to_validate)} new subreddits...[/bold cyan]")
             
@@ -669,6 +822,12 @@ Your response should be a valid JSON object with this structure:
                 sufficient_results = evaluation.get("found_sufficient_communities", False)
                 should_continue = evaluation.get("continue_searching", True)
                 
+                # Modified: Enforce minimum iteration count
+                if sufficient_results and self.search_iterations + 1 < self.min_iterations:
+                    console.print("\n[bold yellow]🔄 Found sufficient communities, but enforcing minimum iteration count.[/bold yellow]")
+                    sufficient_results = False
+                    should_continue = True
+                    
                 if sufficient_results:
                     console.print("\n[bold green]✅ Found sufficient communities! Ending search.[/bold green]")
                     self.trigger_event("sufficient_results_found", {
@@ -677,7 +836,7 @@ Your response should be a valid JSON object with this structure:
                     })
                     break
                     
-                if not should_continue:
+                if not should_continue and self.search_iterations + 1 >= self.min_iterations:
                     console.print("\n[bold yellow]🛑 AI suggests stopping the search. We have the best results we're likely to find.[/bold yellow]")
                     self.trigger_event("search_stopping_early", {
                         "iteration": self.search_iterations + 1,
@@ -685,6 +844,8 @@ Your response should be a valid JSON object with this structure:
                         "evaluation": evaluation.get("evaluation", "No evaluation provided")
                     })
                     break
+                elif not should_continue:
+                    console.print("\n[bold yellow]🔄 AI suggests stopping, but enforcing minimum iteration count.[/bold yellow]")
                     
                 console.print(f"\n[bold cyan]Strategy for next iteration:[/bold cyan] {evaluation.get('recommended_strategy', 'No strategy provided')}")
             
