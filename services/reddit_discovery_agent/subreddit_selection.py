@@ -198,14 +198,42 @@ def interactive_subreddit_selector(subreddits: List[Dict[str, Any]]) -> List[Dic
         mouse_support=True
     )
     
-    # Run the application
-    selected = application.run()
-    
-    # Return the selected subreddits
-    if selected:
+    # Run the application and return selected subreddits
+    try:
+        # Instead of application.run(), use this to be compatible with existing event loop
+        selected = application.run_async().result()
+        
+        if selected is None:
+            return []
+        
         return [subreddits[i] for i in selected]
-    else:
-        return []
+    except Exception as e:
+        console.print(f"[bold red]Error in UI: {str(e)}[/bold red]")
+        
+        # Fallback to simple CLI selection if the UI fails
+        return cli_fallback_selection(subreddits)
+
+def cli_fallback_selection(subreddits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Fallback CLI selection method if the UI fails"""
+    console.print("[yellow]Using fallback CLI selection method...[/yellow]")
+    
+    # Display all subreddits
+    console.print("\n[bold cyan]Available Subreddits:[/bold cyan]")
+    for i, sub in enumerate(subreddits):
+        console.print(f"{i+1}. {sub['name']} ({sub['subscribers']:,} subscribers)")
+    
+    # Get selection input
+    console.print("\n[bold yellow]Enter the numbers of subreddits to select (comma separated, max 8):[/bold yellow]")
+    selection = Prompt.ask("Selection")
+    
+    try:
+        # Parse selection
+        indices = [int(idx.strip()) - 1 for idx in selection.split(',') if idx.strip()]
+        indices = [idx for idx in indices if 0 <= idx < len(subreddits)][:8]  # Limit to 8
+        return [subreddits[i] for i in indices]
+    except:
+        console.print("[bold red]Invalid selection. Using top 5 subreddits.[/bold red]")
+        return subreddits[:5]  # Return top 5 as default
 
 def prepare_and_send_webhook(
     selected_subreddits: List[Dict[str, Any]],
@@ -232,7 +260,8 @@ def prepare_and_send_webhook(
     email = Prompt.ask("Email", default="")
     
     # Format the data that would be sent to the API
-    subreddit_names = [sub["name"] for sub in selected_subreddits]
+    # Remove 'r/' prefix from subreddit names
+    subreddit_names = [sub["name"].replace('r/', '') for sub in selected_subreddits]
     subscriber_counts = [str(sub["subscribers"]) for sub in selected_subreddits]
     
     # Format as semicolon-separated strings
