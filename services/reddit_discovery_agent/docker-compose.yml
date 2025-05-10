@@ -1,20 +1,22 @@
 version: '3.8'
 
 services:
-  # CLI version (default script)
+  # Interactive onboarding version (default)
   reddit-discovery-agent:
     build: .
     volumes:
       - .:/app
     env_file:
       - .env
+    stdin_open: true  # Keep stdin open to support interactive prompts
+    tty: true         # Allocate a TTY for interactive usage
 
   # API version
   reddit-discovery-api:
     build: .
-    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    command: uvicorn api:app --host 0.0.0.0 --port 8088
     ports:
-      - "8000:8000"
+      - "8088:8088"
     volumes:
       - .:/app
     env_file:

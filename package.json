@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "reddit-search": "cd services/reddit_discovery_agent && docker-compose down && docker-compose run --rm reddit-discovery-agent"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
