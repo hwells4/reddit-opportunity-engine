@@ -25,8 +25,8 @@ console = Console()
 async def main():
     # Welcome message
     console.print(Panel.fit(
-        "[bold]Welcome to the VoiceScape![/bold]\n\n"
-        "VoiceScape extracts authentic customer language from Reddit at scale, helping you"
+        "[bold]Welcome to the Subtext AI![/bold]\n\n"
+        "Subtext AI extracts authentic customer language from Reddit at scale, helping you"
         " validate products, features, and messaging before you build."
     ))
     

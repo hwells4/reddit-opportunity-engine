@@ -142,7 +142,7 @@ export function PricingWidget() {
               </li>
               <li className="flex items-start">
                  <Check className="flex-shrink-0 h-6 w-6 text-primary mr-4 mt-0.5" />
-                <span className="text-gray-900 text-base">Full brand voice based on what customers are asking for (to inform writing)</span>
+                <span className="text-gray-900 text-base">Full Subtext AI voice based on what customers are asking for (to inform writing)</span>
               </li>
               <li className="flex items-start">
                  <Check className="flex-shrink-0 h-6 w-6 text-primary mr-4 mt-0.5" />
