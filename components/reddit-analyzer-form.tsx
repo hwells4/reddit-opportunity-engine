@@ -33,6 +33,7 @@ export function RedditAnalyzerForm() {
   const [subreddit, setSubreddit] = useState("")
   const [focus, setFocus] = useState("")
   const [email, setEmail] = useState("")
+  const [postLimit, setPostLimit] = useState("75")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [pipelineId, setPipelineId] = useState<string | undefined>()
@@ -168,7 +169,8 @@ export function RedditAnalyzerForm() {
         body: JSON.stringify({
           subreddit,
           focus,
-          email
+          email,
+          postLimit
         }),
       });
 
@@ -221,6 +223,7 @@ export function RedditAnalyzerForm() {
       setSubreddit("")
       setFocus("")
       setEmail("")
+      setPostLimit("75")
       setIsSubredditValid(null)
       setValidationMessage("")
     }
@@ -309,6 +312,23 @@ export function RedditAnalyzerForm() {
               placeholder="you@example.com"
               required
             />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="postLimit" className="block text-base font-bold text-black">
+              Posts Per Subreddit <span className="text-slate-500">(optional)</span>
+            </label>
+            <input
+              id="postLimit"
+              type="number"
+              min="10"
+              max="500"
+              value={postLimit}
+              onChange={(e) => setPostLimit(e.target.value)}
+              className="w-full py-3 px-4 border-2 border-black rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-red-500 transition-all"
+              placeholder="75"
+            />
+            <p className="text-xs text-gray-600">Higher values provide more data but may take longer to process.</p>
           </div>
 
           <div className="pt-4">

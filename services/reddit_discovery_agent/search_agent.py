@@ -53,11 +53,12 @@ FALLBACK_SUBREDDITS = [
 # Reddit search functions have been moved to reddit_search.py
 
 class SearchAgent:
-    def __init__(self, product_type, problem_area, target_audience, additional_context=None):
+    def __init__(self, product_type, problem_area, target_audience, additional_context=None, search_mode="validation"):
         self.product_type = product_type
         self.problem_area = problem_area
         self.target_audience = target_audience
         self.additional_context = additional_context
+        self.search_mode = search_mode  # New parameter for search mode: 'validation' or 'mvp'
         
         self.search_iterations = 0
         self.max_iterations = 3
@@ -224,7 +225,7 @@ A subreddit is ONLY relevant if it meets AT LEAST TWO of these criteria:
 </evaluation_criteria>
 
 <strict_instructions>
-- Use a VERY HIGH bar (90+ on a 100-point scale) - only include subreddits with a DIRECT, OBVIOUS connection
+- Use a HIGH bar (85+ on a 100-point scale) - only include subreddits with a DIRECT, OBVIOUS connection
 - Be EXTREMELY SUSPICIOUS of large subreddits (>1M subscribers) - they must have a very direct connection to be included
 - If a subreddit seems "maybe" relevant or "somewhat" relevant, REJECT IT
 - Only include subreddits that are a PERFECT FIT for our market and use case
@@ -252,7 +253,7 @@ Then respond ONLY with a valid JSON object in the following format:
 }}
 </json_format>
 
-Only include subreddits with a relevance score of 90 or higher in the relevant_subreddits list.
+Only include subreddits with a relevance score of 85 or higher in the relevant_subreddits list.
 
 Your response must begin with the opening curly brace of the JSON object and end with the closing curly brace, with no other text outside these braces.
 """
@@ -311,8 +312,8 @@ Your response must begin with the opening curly brace of the JSON object and end
             matches = re.findall(pattern, response)
             
             if matches:
-                # Filter to only include subreddits with score >= 90
-                relevant_subs = [name for name, score in matches if int(score) >= 90]
+                # Filter to only include subreddits with score >= 85
+                relevant_subs = [name for name, score in matches if int(score) >= 85]
                 
                 console.print(f"[yellow]⚠️ Extracted {len(relevant_subs)} relevant subreddits from broken JSON[/yellow]")
                 for sub in relevant_subs:
@@ -575,8 +576,19 @@ Your response must begin with the opening curly brace of the JSON object and end
 Product Type: {self.product_type}
 Problem Area: {self.problem_area}
 Target Audience: {self.target_audience}
-Additional Context: {self.additional_context or "None provided"}
+"""
 
+        # Add additional context differently based on search mode
+        if self.search_mode == "mvp":
+            context += f"""
+Question/Goal: {self.additional_context or "None provided"}
+"""
+        else:
+            context += f"""
+Additional Context: {self.additional_context or "None provided"}
+"""
+
+        context += f"""
 Current iteration: {iteration + 1} of {self.max_iterations}
 """
 
@@ -589,7 +601,8 @@ Current iteration: {iteration + 1} of {self.max_iterations}
                 
             context += "\nWe need a mix of niche communities (ideally under 500,000 subscribers) and highly relevant larger communities."
 
-        prompt = f"""
+        # Base prompt for both modes
+        base_prompt = f"""
 You are an expert at discovering relevant Reddit communities. Your goal is to generate effective search queries that will help find:
 
 1. Niche subreddits (ideally 2,500-500,000 subscribers) that are highly relevant to the target audience and problem area
@@ -597,13 +610,39 @@ You are an expert at discovering relevant Reddit communities. Your goal is to ge
 
 For context:
 {context}
+"""
 
+        # Custom prompt based on search mode
+        if self.search_mode == "mvp":
+            custom_prompt = f"""
+Focus on finding subreddits that would be most helpful for answering the user's question or achieving their goal. 
+The subreddits should have discussions, insights, or communities that could provide relevant information or 
+perspective on the specific question/goal.
+"""
+        else:
+            custom_prompt = f"""
+Focus on finding subreddits that would be most helpful for validating the product idea and understanding the 
+market needs. The subreddits should have active discussions about similar problems, solutions, or topics relevant 
+to the product being developed.
+"""
+
+        prompt = base_prompt + custom_prompt + f"""
 Please generate 4-6 specific, targeted search queries with a mix of:
 
 1. Specific terminology or jargon used by the target audience
 2. Combinations of multiple relevant concepts (e.g., "reddit indie game developers marketing discord")
 3. Long-tail searches that might yield specific results
 4. Queries targeting both niche communities and larger communities with high relevance 
+
+CRITICAL: Each search query MUST be short and concise (5-7 words maximum) to work effectively with the Reddit search API.
+DO NOT create long queries or use entire sentences. Break down concepts into key terms.
+
+EXAMPLES:
+Instead of "best subreddits for Subscription-based service providing unlimited custom-built AI marketing automation workflows" 
+Use: "marketing automation workflow tools reddit"
+
+Instead of "subreddits dedicated to Marketing agency owners and marketing directors at small to mid-sized agencies" 
+Use: "marketing agency directors reddit"
 
 Your response should be a valid JSON object with this structure:
 {{
@@ -635,13 +674,22 @@ Your response should be a valid JSON object with this structure:
             queries = parsed_response.get("search_queries", [])
             reasoning = parsed_response.get("reasoning", "No reasoning provided")
             
+            # Ensure queries are concise by limiting length
+            concise_queries = []
+            for query in queries:
+                # Split query into words and limit to 7 words max
+                words = query.split()
+                if len(words) > 7:
+                    query = " ".join(words[:7])
+                concise_queries.append(query)
+            
             self.trigger_event("queries_generated", {
                 "iteration": iteration + 1,
-                "queries": queries,
+                "queries": concise_queries,
                 "reasoning": reasoning
             })
             
-            return queries
+            return concise_queries
         except json.JSONDecodeError:
             console.print("[bold red]Error: AI response was not valid JSON[/bold red]")
             console.print(response)
@@ -653,10 +701,10 @@ Your response should be a valid JSON object with this structure:
             
             # Fallback to some default queries
             fallback_queries = [
-                f"small niche subreddits for {self.target_audience}",
-                f"reddit communities under 100k for {self.product_type}",
-                f"specialized reddit forums {self.problem_area}",
-                f"best subreddits for {self.product_type} {self.problem_area}"
+                f"marketing agency subreddits",
+                f"reddit marketing automation tools",
+                f"specialized marketing forums reddit",
+                f"marketing directors reddit communities"
             ]
             
             self.trigger_event("using_fallback_queries", {
@@ -681,8 +729,19 @@ Your response should be a valid JSON object with this structure:
 Product Type: {self.product_type}
 Problem Area: {self.problem_area}
 Target Audience: {self.target_audience}
-Additional Context: {self.additional_context or "None provided"}
+"""
 
+        # Add additional context differently based on search mode
+        if self.search_mode == "mvp":
+            context += f"""
+Question/Goal: {self.additional_context or "None provided"}
+"""
+        else:
+            context += f"""
+Additional Context: {self.additional_context or "None provided"}
+"""
+
+        context += f"""
 Search progress:
 - Total iterations completed: {self.search_iterations}
 - Total validated subreddits found: {len(validated_subreddits)}
@@ -694,8 +753,9 @@ Search progress:
         for sub in validated_subreddits:
             subreddit_info += f"- {sub['subreddit_name']} ({sub.get('subscribers', 'Unknown')} subscribers): {sub.get('title', 'No title')}\n"
         
-        prompt = f"""
-You are a Reddit community discovery expert with a focus on finding relevant subreddits for product research and validation.
+        # Base prompt for both modes
+        base_prompt = f"""
+You are a Reddit community discovery expert.
 
 Current search state:
 {context}
@@ -711,11 +771,24 @@ Please analyze:
 3. Balance between niche communities (2,500-500K subscribers) and larger highly relevant communities 
 4. If another search iteration would likely yield better results
 5. What search strategy to use next if we continue
+"""
 
+        # Custom prompt based on search mode
+        if self.search_mode == "mvp":
+            custom_prompt = f"""
+IMPORTANT: Focus on communities that can help answer the user's question or achieve their goal. Evaluate 
+how well each subreddit aligns with providing valuable insights, perspectives, or discussions that directly 
+relate to the question/goal the user has specified. Consider communities where people might be discussing 
+similar topics, challenges, or solutions.
+"""
+        else:
+            custom_prompt = f"""
 IMPORTANT: Focus on communities that are DIRECTLY related to product validation, startup founders, marketing, 
 and copywriting. Do NOT include general technology subreddits (like r/Android, r/Apple) unless there is 
 strong evidence they discuss product development and validation frequently.
+"""
 
+        prompt = base_prompt + custom_prompt + f"""
 Your response should be a valid JSON object with this structure:
 {{
   "evaluation": "Detailed analysis of search results quality",
@@ -1022,14 +1095,27 @@ Your response should be a valid JSON object with this structure:
             # Import the subreddit_selection module here to avoid circular imports
             from subreddit_selection import select_subreddits_for_analysis
             
-            # Use the subreddit selection UI from the separate module
-            select_subreddits_for_analysis(
-                result, 
-                self.target_audience,
-                self.problem_area,
-                self.product_type,
-                self.additional_context
-            )
+            try:
+                # Use the subreddit selection UI from the separate module with proper parameters
+                select_subreddits_for_analysis(
+                    result, 
+                    self.target_audience,
+                    self.problem_area,
+                    self.product_type,
+                    self.additional_context
+                )
+            except TypeError as e:
+                # Fallback if there's a parameter mismatch 
+                console.print(f"[yellow]Error in subreddit selection: {str(e)}[/yellow]")
+                console.print("[yellow]Attempting with fewer parameters...[/yellow]")
+                
+                # Try with only required parameters
+                select_subreddits_for_analysis(
+                    result,
+                    self.target_audience,
+                    self.problem_area,
+                    self.product_type
+                )
         
         # Clear cache
         clear_cache()

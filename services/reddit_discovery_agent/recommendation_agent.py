@@ -24,11 +24,12 @@ api_call_count = 0
 run_id = str(uuid.uuid4())[:8]  # Generate a unique ID for this run
 
 class RecommendationAgent:
-    def __init__(self, product_type, problem_area, target_audience, additional_context=None):
+    def __init__(self, product_type, problem_area, target_audience, additional_context=None, search_mode="validation"):
         self.product_type = product_type
         self.problem_area = problem_area
         self.target_audience = target_audience
         self.additional_context = additional_context
+        self.search_mode = search_mode  # New parameter for search mode: 'validation' or 'mvp'
         
         # Configuration
         self.min_recommendations = 6
@@ -97,14 +98,29 @@ class RecommendationAgent:
             subreddit_info += f"NSFW: {sub['over18']}\n"
             subreddit_info += f"Active users: {sub['active_user_count']}\n\n"
         
-        prompt = f"""
-You are an expert Reddit Community Discovery Specialist. Your goal is to help entrepreneurs find the most relevant subreddits for researching product opportunities based on their stated interests and needs.
-
-Carefully analyze the user's focus area:
+        # Base context for both modes
+        base_context = f"""
 - Product Type: {self.product_type}
 - Problem Area: {self.problem_area}
 - Target Audience: {self.target_audience}
+"""
+
+        # Specific context based on search mode
+        if self.search_mode == "mvp":
+            specific_context = f"""
+- Question/Goal: {self.additional_context or "None provided"}
+"""
+        else:
+            specific_context = f"""
 - Additional Context: {self.additional_context or "None provided"}
+"""
+
+        # Base prompt for both modes
+        base_prompt = f"""
+You are an expert Reddit Community Discovery Specialist. Your goal is to help entrepreneurs find the most relevant subreddits for researching product opportunities based on their stated interests and needs.
+
+Carefully analyze the user's focus area:
+{base_context}{specific_context}
 
 Based on the validated subreddits data, please provide:
 1. {self.min_recommendations}-{self.max_recommendations} relevant subreddits with the following details for each:
@@ -120,9 +136,23 @@ When choosing which subreddits to recommend:
 - Prioritize relevance to the problem area and target audience over size
 - Avoid NSFW subreddits unless specifically requested
 - Focus on quality over quantity - but provide {self.min_recommendations}-{self.max_recommendations} recommendations for comprehensive analysis
+"""
 
-2. 3-5 specific search term suggestions to use within these subreddits
+        # Custom prompt based on search mode
+        if self.search_mode == "mvp":
+            custom_prompt = f"""
+2. 3-5 specific search term suggestions to use within these subreddits to find content that answers the user's question/goal
 
+Select subreddits that are most likely to have discussions, insights, or communities that could provide information or perspective relevant to answering the user's question or achieving their goal.
+"""
+        else:
+            custom_prompt = f"""
+2. 3-5 specific search term suggestions to use within these subreddits to find product validation opportunities
+
+Select subreddits that are most likely to help validate the product idea and understand the market needs. Prioritize communities with active discussions about similar problems, solutions, or topics relevant to the product being developed.
+"""
+
+        prompt = base_prompt + custom_prompt + f"""
 Subreddit information:
 {subreddit_info}
 
@@ -180,13 +210,14 @@ Your response should be a valid JSON object with this structure:
             console.print(response)
             return None
     
-def main(validated_subreddits, product_type, problem_area, target_audience, additional_context=None):
+def main(validated_subreddits, product_type, problem_area, target_audience, additional_context=None, search_mode="validation"):
     """Generate recommendations from validated subreddits."""
     agent = RecommendationAgent(
         product_type=product_type,
         problem_area=problem_area,
         target_audience=target_audience,
-        additional_context=additional_context
+        additional_context=additional_context,
+        search_mode=search_mode
     )
     
     recommendations = agent.generate_recommendations(validated_subreddits)

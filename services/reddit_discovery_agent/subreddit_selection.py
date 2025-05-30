@@ -4,12 +4,14 @@ import requests
 from typing import Dict, Any, List, Union, Optional
 from rich.console import Console
 from rich.prompt import Prompt
+from rich.panel import Panel
 from prompt_toolkit import Application
 from prompt_toolkit.layout import Layout, HSplit, VSplit
 from prompt_toolkit.widgets import Frame, Label, Box
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
+from subreddit_utils import get_subreddit_info
 
 # Setup console for better output
 console = Console()
@@ -60,6 +62,21 @@ def select_subreddits_for_analysis(
     for sub in selected_subreddits:
         console.print(f"  • {sub['name']} ({sub['subscribers']:,} subscribers)")
     
+    # Ask if user wants to add additional subreddits
+    add_more = Prompt.ask(
+        "\n[bold cyan]Would you like to add any additional subreddits that weren't found in the search?[/bold cyan]",
+        choices=["y", "n"],
+        default="n"
+    )
+    
+    if add_more.lower() == "y":
+        additional_subreddits = add_additional_subreddits()
+        if additional_subreddits:
+            selected_subreddits.extend(additional_subreddits)
+            console.print("\n[bold green]Updated Selected Subreddits:[/bold green]")
+            for sub in selected_subreddits:
+                console.print(f"  • {sub['name']} ({sub['subscribers']:,} subscribers)")
+    
     # Handle email and API payload creation
     return prepare_and_send_webhook(
         selected_subreddits, 
@@ -68,6 +85,103 @@ def select_subreddits_for_analysis(
         product_type,
         additional_context
     )
+
+def add_additional_subreddits() -> List[Dict[str, Any]]:
+    """
+    Allow users to add additional subreddits with validation and metadata fetching.
+    
+    Returns:
+        List of validated additional subreddit dictionaries
+    """
+    additional_subreddits = []
+    
+    console.print(Panel.fit(
+        "[bold]Add Additional Subreddits[/bold]\n\n"
+        "Enter subreddit names (with or without 'r/' prefix) separated by commas.\n"
+        "We'll validate them and fetch their subscriber counts.\n\n"
+        "Example: entrepreneur, startups, r/SaaS, indiehackers"
+    ))
+    
+    while True:
+        subreddit_input = Prompt.ask(
+            "\n[bold cyan]Enter subreddit names (comma-separated) or 'done' to finish[/bold cyan]",
+            default=""
+        )
+        
+        if subreddit_input.lower() in ['done', 'exit', 'quit', '']:
+            break
+            
+        # Parse the input
+        subreddit_names = [name.strip() for name in subreddit_input.split(',') if name.strip()]
+        
+        if not subreddit_names:
+            console.print("[yellow]No subreddits entered. Try again or type 'done' to finish.[/yellow]")
+            continue
+            
+        console.print(f"\n[yellow]Validating {len(subreddit_names)} subreddit(s)...[/yellow]")
+        
+        # Validate each subreddit
+        for subreddit_name in subreddit_names:
+            # Clean the subreddit name
+            clean_name = subreddit_name.lower().strip()
+            if clean_name.startswith('r/'):
+                clean_name = clean_name[2:]
+            elif clean_name.startswith('/r/'):
+                clean_name = clean_name[3:]
+            
+            # Skip if already in the list
+            if any(sub['name'].lower() == f"r/{clean_name}" for sub in additional_subreddits):
+                console.print(f"[yellow]⚠️ {clean_name} already added, skipping[/yellow]")
+                continue
+                
+            console.print(f"[yellow]Checking[/yellow] r/{clean_name}...")
+            
+            # Get subreddit info
+            info = get_subreddit_info(clean_name)
+            
+            if info:
+                # Successfully validated
+                metadata = {
+                    "name": f"r/{info.get('display_name', clean_name)}",
+                    "title": info.get('title', ''),
+                    "subscribers": info.get('subscribers', 0),
+                    "description": info.get('public_description', ''),
+                    "url": info.get('url', ''),
+                    "created_utc": info.get('created_utc', 0),
+                    "over18": info.get('over18', False),
+                    "active_users": info.get('active_user_count', 0),
+                    "is_niche": info.get('subscribers', 0) < 750000,  # Using same threshold as search agent
+                    "selection_reason": "Manually added by user"
+                }
+                
+                subscriber_count = metadata['subscribers']
+                
+                # Check minimum threshold (same as search agent)
+                if subscriber_count < 5000:
+                    console.print(f"[yellow]✓ Validated but too small[/yellow] r/{clean_name} - {subscriber_count:,} subscribers (minimum 5,000)")
+                    continue
+                    
+                additional_subreddits.append(metadata)
+                console.print(f"[green]✓ Added[/green] r/{clean_name} - {subscriber_count:,} subscribers")
+            else:
+                console.print(f"[red]✗ Could not validate[/red] r/{clean_name} - subreddit may not exist or be private")
+        
+        if additional_subreddits:
+            console.print(f"\n[bold green]Added {len(additional_subreddits)} additional subreddit(s):[/bold green]")
+            for sub in additional_subreddits:
+                console.print(f"  • {sub['name']} ({sub['subscribers']:,} subscribers)")
+        
+        # Ask if they want to add more
+        add_more = Prompt.ask(
+            "\n[bold cyan]Add more subreddits?[/bold cyan]",
+            choices=["y", "n"],
+            default="n"
+        )
+        
+        if add_more.lower() != "y":
+            break
+    
+    return additional_subreddits
 
 def interactive_subreddit_selector(subreddits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -259,6 +373,11 @@ def prepare_and_send_webhook(
     console.print("\n[bold cyan]Please provide your email to receive the analysis report:[/bold cyan]")
     email = Prompt.ask("Email", default="")
     
+    # Prompt for post limit
+    console.print("\n[bold cyan]How many posts would you like to analyze per subreddit?[/bold cyan]")
+    console.print("[dim](Higher values provide more data but may take longer to process)[/dim]")
+    post_limit = Prompt.ask("Post limit", default="75")
+    
     # Format the data that would be sent to the API
     # Remove 'r/' prefix from subreddit names
     subreddit_names = [sub["name"].replace('r/', '') for sub in selected_subreddits]
@@ -272,7 +391,7 @@ def prepare_and_send_webhook(
     pipeline_inputs = [
         {"input_name": "email", "value": email},
         {"input_name": "subscribers", "value": subscribers_str},
-        {"input_name": "post_limit", "value": "75"},
+        {"input_name": "post_limit", "value": post_limit},
         {"input_name": "name", "value": ""},
         {"input_name": "subreddits", "value": subreddits_str},
         {"input_name": "audience", "value": target_audience},

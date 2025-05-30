@@ -13,7 +13,7 @@ from subreddit_utils import clear_cache
 # Setup console for better output
 console = Console()
 
-async def run_agentic_finder_async(product_type, problem_area, target_audience, additional_context=None):
+async def run_agentic_finder_async(product_type, problem_area, target_audience, additional_context=None, search_mode="validation"):
     """
     Run the full agentic Reddit discovery process asynchronously.
     
@@ -21,7 +21,8 @@ async def run_agentic_finder_async(product_type, problem_area, target_audience, 
         product_type (str): Type of product
         problem_area (str): Problem area the product addresses
         target_audience (str): Target audience for the product
-        additional_context (str): Any additional context
+        additional_context (str): Any additional context or question/goal for the search
+        search_mode (str): Mode of search - "validation" or "mvp"
     
     Returns:
         dict: Final recommendations
@@ -31,13 +32,22 @@ async def run_agentic_finder_async(product_type, problem_area, target_audience, 
     
     start_time = time.time()
     
+    # Display the mode of operation
+    if search_mode == "mvp":
+        console.print("[bold cyan]OPERATING IN SUBTEXT MVP MODE[/bold cyan]")
+        console.print("[bold cyan]Finding subreddits to answer your question/goal[/bold cyan]")
+    else:
+        console.print("[bold cyan]OPERATING IN SUBTEXT VALIDATION MODE[/bold cyan]")
+        console.print("[bold cyan]Finding subreddits to validate your product idea[/bold cyan]")
+    
     # Step 1: Run the search agent to find subreddits
     console.print("[bold cyan]PHASE 1: DISCOVERING SUBREDDITS[/bold cyan]")
     search_agent = SearchAgent(
         product_type=product_type,
         problem_area=problem_area,
         target_audience=target_audience,
-        additional_context=additional_context
+        additional_context=additional_context,
+        search_mode=search_mode
     )
     
     validated_subreddits = await search_agent.run()
@@ -49,7 +59,8 @@ async def run_agentic_finder_async(product_type, problem_area, target_audience, 
         product_type=product_type,
         problem_area=problem_area,
         target_audience=target_audience,
-        additional_context=additional_context
+        additional_context=additional_context,
+        search_mode=search_mode
     )
     
     # Add metadata about the search process

@@ -1,13 +1,9 @@
 #!/usr/bin/env python
 """
-Reddit Discovery Agent Onboarding
----------------------------------
-An interactive onboarding flow for the Reddit Discovery Agent.
-This script will guide users through the process of:
-1. Entering their product details
-2. Running the subreddit search
-3. Selecting subreddits
-4. Sending analysis requests
+Subtext MVP Flow
+--------------
+An interactive flow for the Subtext MVP mode, which focuses on finding subreddits
+to answer a question or achieve a goal, rather than validating a product directly.
 """
 
 import os
@@ -25,12 +21,19 @@ console = Console()
 async def main():
     # Welcome message
     console.print(Panel.fit(
-        "[bold]Welcome to Subtext Validation![/bold]\n\n"
-        "Subtext Validation helps you extract authentic customer language from Reddit at scale, "
-        "validating your products, features, and messaging before you build."
+        "[bold]Welcome to Subtext MVP![/bold]\n\n"
+        "Subtext MVP helps you find Reddit communities that can answer your questions "
+        "or help you achieve your marketing and product goals."
     ))
     
-    console.print(Markdown("## Let's get started with a few questions about your product:"))
+    console.print(Markdown("## Let's get started with your question or goal:"))
+    
+    # Get the main question or goal
+    question_goal = Prompt.ask(
+        "[bold cyan]What question are you trying to answer or goal are you trying to achieve?[/bold cyan] "
+        "(e.g., 'How should I message my new feature to my audience?', 'Which product launch should I prioritize?')",
+        default="How should I message my product to attract customers from my competitors?"
+    )
     
     # Get product information through prompts
     product_type = Prompt.ask(
@@ -48,19 +51,12 @@ async def main():
         default="Startup founders and marketers"
     )
     
-    additional_context = Prompt.ask(
-        "[bold cyan]Any additional context about your product? (optional)[/bold cyan]",
-        default=""
-    )
-    
     # Confirm inputs before proceeding
     console.print("\n[bold]Here's what we'll be searching for:[/bold]")
+    console.print(f"Question/Goal: [cyan]{question_goal}[/cyan]")
     console.print(f"Product Type: [cyan]{product_type}[/cyan]")
     console.print(f"Problem Area: [cyan]{problem_area}[/cyan]")
     console.print(f"Target Audience: [cyan]{target_audience}[/cyan]")
-    
-    if additional_context:
-        console.print(f"Additional Context: [cyan]{additional_context}[/cyan]")
     
     proceed = Prompt.ask(
         "\nLook good?", 
@@ -74,26 +70,37 @@ async def main():
     
     console.print(Panel.fit(
         "[bold]Starting subreddit discovery - this may take a few minutes![/bold]\n\n"
-        "We'll search the web and analyze Reddit communities to find the best matches for your product."
+        "We'll search Reddit communities to find the best ones to help answer your question or achieve your goal."
     ))
     
-    # Initialize and run the search agent
+    # Set the MVP-specific saved_item_id for the webhook
+    # This overrides the default ID in the subreddit_selection module
+    # Store the original value to restore later
+    original_saved_item_id = os.environ.get("GUMLOOP_SAVED_ITEM_ID", "")
+    os.environ["GUMLOOP_SAVED_ITEM_ID"] = "96YEbP1uWuEtBKNsiraxN7"
+    
+    # Initialize and run the search agent with the question/goal as additional_context
+    # This ensures compatibility with the existing search agent structure
     agent = SearchAgent(
         product_type=product_type,
         problem_area=problem_area,
         target_audience=target_audience,
-        additional_context=additional_context
+        additional_context=question_goal
     )
     
-    result = await agent.run()
-    
-    # Ask if the user wants to select subreddits for analysis (this is handled in the agent.run())
-    # The agent.run() method already calls select_subreddits_for_analysis() if the user chooses to
+    try:
+        result = await agent.run()
+    finally:
+        # Restore the original environment variable if it existed
+        if original_saved_item_id:
+            os.environ["GUMLOOP_SAVED_ITEM_ID"] = original_saved_item_id
+        else:
+            os.environ.pop("GUMLOOP_SAVED_ITEM_ID", None)
     
     # End of flow
     console.print(Panel.fit(
         "[bold green]All done![/bold green]\n\n"
-        "You've successfully discovered relevant subreddits for your product."
+        "You've successfully discovered relevant subreddits that can help answer your question or achieve your goal."
     ))
 
 if __name__ == "__main__":

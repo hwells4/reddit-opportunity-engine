@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { subreddit, focus, email } = body;
+    const { subreddit, focus, email, postLimit } = body;
 
     if (!subreddit || !email) {
       return NextResponse.json(
@@ -25,6 +25,7 @@ export async function POST(request: Request) {
           saved_item_id: "jed6MsnPKNGUmh36KgcP65",
           pipeline_inputs: [
             { input_name: "email", value: email },
+            { input_name: "post_limit", value: postLimit || "75" },
             { input_name: "category", value: focus || "" },
             { input_name: "subreddit", value: subreddit },
           ],
