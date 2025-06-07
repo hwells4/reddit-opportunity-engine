@@ -156,9 +156,9 @@ def add_additional_subreddits() -> List[Dict[str, Any]]:
                 
                 subscriber_count = metadata['subscribers']
                 
-                # Check minimum threshold (same as search agent)
-                if subscriber_count < 5000:
-                    console.print(f"[yellow]✓ Validated but too small[/yellow] r/{clean_name} - {subscriber_count:,} subscribers (minimum 5,000)")
+                # Check minimum threshold (lower threshold for manually added subreddits)
+                if subscriber_count < 1500:
+                    console.print(f"[yellow]✓ Validated but too small[/yellow] r/{clean_name} - {subscriber_count:,} subscribers (minimum 1,500)")
                     continue
                     
                 additional_subreddits.append(metadata)
