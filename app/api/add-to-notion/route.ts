@@ -404,22 +404,7 @@ async function createFullReportPage({
     },
   ];
 
-  // Add content chunks as paragraph blocks
-  chunks.forEach(chunk => {
-    children.push({
-      type: "paragraph" as const,
-      paragraph: {
-        rich_text: [
-          {
-            text: {
-              content: chunk,
-            },
-          },
-        ],
-      },
-    });
-  });
-
+  // Create page first with just the header blocks (avoid 100-block limit)
   const response = await notion.pages.create({
     parent: {
       page_id: parentPageId,
@@ -435,8 +420,49 @@ async function createFullReportPage({
         ],
       },
     },
-    children: children,
+    children: children, // Just the header blocks
   });
+
+  // Add content chunks separately, ensuring each is under 2000 characters
+  for (const chunk of chunks) {
+    // Double-check chunk length and split further if needed
+    if (chunk.length > 1900) {
+      const subChunks = splitLongLine(chunk, 1900);
+      for (const subChunk of subChunks) {
+        await notion.blocks.children.append({
+          block_id: response.id,
+          children: [{
+            type: "paragraph",
+            paragraph: {
+              rich_text: [
+                {
+                  text: {
+                    content: subChunk,
+                  },
+                },
+              ],
+            },
+          }],
+        });
+      }
+    } else {
+      await notion.blocks.children.append({
+        block_id: response.id,
+        children: [{
+          type: "paragraph",
+          paragraph: {
+            rich_text: [
+              {
+                text: {
+                  content: chunk,
+                },
+              },
+            ],
+          },
+        }],
+      });
+    }
+  }
 
   return response;
 }
