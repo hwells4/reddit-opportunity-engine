@@ -222,3 +222,15 @@ This document outlines the design and implementation plan for a magical, engagin
 - What is the optimal number of subreddit recommendations to display? 
 - How should we balance showing large vs. niche communities in results?
 - Should we add a feature to request additional subreddit suggestions? 
+
+**Product:** What product(s) would you like to research?
+United States Higher Education (Universities and the industry generally)
+
+**Audience:** What audience(s) would you like insight on?
+Any/all aggregate would be interesting, but if specifics are required, let's say - Students and prospective students 
+
+**Problem:** What problems does your audience face that you'd like to understand better?
+Negative perceptions and critiques of higher education's reputation and its value proposition. This includes concerns about rising costs, job market outcomes, debt burden, and whether degrees still provide meaningful career advantages in today's economy.
+
+**Question:** What question(s) would you like answered about the above?
+What are the top priorities or topics these groups are focused on regarding the reputation or value proposition of universities and higher education generally, and how, if at all, has that changed over time? We're particularly interested in understanding the most frequently discussed pain points and whether sentiment has shifted in response to economic conditions, remote work trends, or alternative education pathways. 

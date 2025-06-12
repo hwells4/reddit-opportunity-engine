@@ -1,0 +1,296 @@
+# Reddit Discovery Slack Bot: Product Requirements Document (PRD)
+
+## Executive Summary
+
+A conversational Slack bot that replicates and enhances the existing CLI-based Reddit discovery workflow. Users can trigger discovery through natural conversation, iteratively refine parameters, select subreddits, configure campaigns, and launch automated outreach—all without leaving Slack.
+
+## Product Vision
+
+Transform the manual CLI process into a seamless conversational experience where users can:
+- Paste customer conversations and get intelligent parameter extraction
+- Iteratively refine discovery parameters through natural dialogue
+- Review and select discovered subreddits with rich previews
+- Configure and launch campaigns directly from Slack
+- Track progress and receive notifications in real-time
+
+## Current State vs. Target State
+
+### Current CLI Workflow:
+1. Run `python mvp_flow.py`
+2. Answer prompts for product type, problem area, target audience, context
+3. Wait for Reddit discovery to complete
+4. Review discovered subreddits in terminal
+5. Manually select relevant subreddits
+6. Add additional subreddits if needed
+7. Provide email and post limit
+8. Trigger Gumloop webhook
+9. Receive email notification when complete
+
+### Target Slack Workflow:
+1. **Trigger**: `@reddit-bot` or `/reddit-discover`
+2. **Conversation**: Paste customer conversation or describe product
+3. **Refinement**: Bot extracts parameters, user iterates until satisfied
+4. **Discovery**: Bot triggers Reddit search, provides real-time updates
+5. **Selection**: Interactive subreddit selection with previews and actions
+6. **Enhancement**: Add custom subreddits with validation
+7. **Configuration**: Set email and post limits through simple prompts
+8. **Launch**: Confirm and trigger Gumloop pipeline
+9. **Completion**: Receive success notification with tracking details
+
+## Core Features
+
+### 1. Conversational Parameter Extraction
+**Purpose**: Intelligently extract and refine the four core parameters through natural dialogue
+
+**Functionality**:
+- Accept pasted customer conversations, product descriptions, or free-form text
+- Use Claude 4 Sonnet with MCP tools to extract initial parameters (product type, problem area, target audience, additional context)
+- Present extracted parameters for user review
+- Allow iterative refinement through conversational feedback
+- Maintain context across multiple refinement cycles
+
+### 2. Enhanced Reddit Discovery with MCP Tools
+**Purpose**: Leverage advanced AI capabilities for superior subreddit discovery
+
+**Functionality**:
+- **Firecrawl MCP Integration**: Scrape company websites and landing pages for deeper context
+- **Perplexity MCP Integration**: Intelligent web search for subreddit recommendations and validation
+- **Claude 4 Sonnet**: Advanced reasoning for parameter extraction and subreddit relevance analysis
+- **Multi-source Discovery**: Combine existing Reddit API with MCP-powered research
+
+### 3. Stateful Session Management
+**Purpose**: Maintain conversation context and progress across all interactions
+
+**Technical Implementation**:
+- Persistent session storage per user/channel
+- State machine with defined stages: `GATHERING`, `REFINING`, `SEARCHING`, `SELECTING`, `CONFIGURING`, `LAUNCHING`
+- Session timeout and cleanup (24-hour TTL)
+- Ability to resume interrupted conversations
+- Context preservation across Slack app restarts
+
+### 4. Interactive Subreddit Selection
+**Purpose**: Allow users to review, select, and enhance discovered subreddits through rich Slack UI
+
+**Functionality**:
+- Display subreddits with rich formatting (name, member count, description, relevance reason)
+- Checkbox-style selection with visual feedback
+- "View on Reddit" links for each subreddit
+- Ability to add custom subreddits with MCP-powered validation
+- Selection summary and modification options
+
+### 5. Campaign Configuration
+**Purpose**: Collect email and post limit settings through conversational prompts
+
+**Functionality**:
+- Smart email validation and suggestions
+- Post limit selection with recommendations based on subreddit size
+- Configuration summary and modification options
+- Integration with existing Gumloop pipeline parameters
+
+### 6. Gumloop Pipeline Integration
+**Purpose**: Trigger existing Gumloop webhook with collected parameters and track execution
+
+**Functionality**:
+- Format parameters for Gumloop API compatibility
+- Call existing `/api/start-pipeline` endpoint
+- Store and track Gumloop run ID
+- Provide tracking URL for campaign monitoring
+- Handle pipeline errors and retry logic
+
+## Technical Architecture
+
+### Core Components
+
+#### 1. Slack Bot Service
+- **Framework**: Slack Bolt SDK (Python)
+- **Hosting**: Railway (always-on service)
+- **Session Storage**: Redis for persistent state management
+- **LLM Integration**: Claude 4 Sonnet via OpenRouter API
+- **MCP Tools**: Firecrawl and Perplexity integrations
+
+#### 2. Enhanced Search Agent
+- **Model**: Claude 4 Sonnet (anthropic/claude-3.5-sonnet-20241022)
+- **Firecrawl MCP**: Company website analysis and content extraction
+- **Perplexity MCP**: Intelligent subreddit discovery and validation
+- **Multi-modal Research**: Combine web scraping, search, and AI analysis
+
+#### 3. State Management System
+```python
+class ConversationState(Enum):
+    GATHERING = "gathering"           # Initial parameter extraction
+    REFINING = "refining"            # Iterative parameter refinement  
+    SEARCHING = "searching"          # Reddit discovery in progress
+    SELECTING = "selecting"          # Subreddit selection and customization
+    CONFIGURING = "configuring"      # Email and post limit configuration
+    LAUNCHING = "launching"          # Gumloop pipeline execution
+    COMPLETE = "complete"            # Campaign launched successfully
+
+class SessionManager:
+    def get_session(self, user_id: str) -> ConversationSession
+    def update_session(self, session: ConversationSession) -> None
+    def cleanup_expired_sessions(self) -> None
+```
+
+#### 4. Integration Layer
+- **Reddit Discovery API**: Enhanced existing FastAPI service
+- **Gumloop Pipeline**: Existing webhook integration
+- **MCP Service Layer**: Firecrawl and Perplexity API integrations
+
+### API Endpoints
+
+#### Slack Bot Endpoints
+```
+POST /slack/events          # Slack event subscriptions
+POST /slack/interactive     # Interactive component handling  
+POST /slack/commands        # Slash command handling
+GET  /health               # Health check for Railway
+```
+
+#### Enhanced Internal API Methods
+```python
+async def extract_parameters_with_mcp(text: str, company_url: str = None) -> Dict[str, str]
+async def research_subreddits_with_perplexity(query: str) -> List[str]
+async def scrape_company_context(url: str) -> Dict[str, str]
+async def validate_subreddit_with_mcp(subreddit: str) -> bool
+async def refine_parameters(current: Dict, feedback: str) -> Dict[str, str]  
+async def start_reddit_discovery(params: Dict) -> str
+async def poll_discovery_status(search_id: str) -> Dict
+async def launch_gumloop_pipeline(config: Dict) -> Dict
+```
+
+### Data Models
+
+#### Conversation Session
+```python
+@dataclass
+class ConversationSession:
+    user_id: str
+    channel_id: str
+    state: ConversationState
+    created_at: datetime
+    last_activity: datetime
+    
+    # Discovery parameters
+    product_type: Optional[str] = None
+    problem_area: Optional[str] = None  
+    target_audience: Optional[str] = None
+    additional_context: Optional[str] = None
+    company_url: Optional[str] = None
+    
+    # Discovery results
+    search_id: Optional[str] = None
+    discovered_subreddits: List[Dict] = field(default_factory=list)
+    selected_subreddits: List[str] = field(default_factory=list)
+    custom_subreddits: List[str] = field(default_factory=list)
+    
+    # Campaign configuration
+    email: Optional[str] = None
+    post_limit: int = 75
+    gumloop_run_id: Optional[str] = None
+```
+
+## Implementation Phases
+
+### Phase 1: Core Bot Infrastructure
+- Slack bot setup with Bolt SDK
+- Basic session management with Redis
+- Integration with existing Reddit Discovery API
+- Simple parameter extraction and refinement
+
+### Phase 2: Enhanced AI Capabilities
+- Claude 4 Sonnet integration
+- Firecrawl MCP for website analysis
+- Perplexity MCP for subreddit research
+- Advanced parameter extraction
+
+### Phase 3: Rich Interactive Experience
+- Slack UI components for subreddit selection
+- Real-time progress tracking
+- Campaign configuration and launch
+- Error handling and recovery
+
+### Phase 4: Production Polish
+- Comprehensive testing and error handling
+- Performance optimization
+- Security and compliance features
+- Monitoring and analytics
+
+## Success Metrics
+
+### User Experience Metrics
+- **Session Completion Rate**: % of started sessions that reach campaign launch
+- **Parameter Refinement Cycles**: Average iterations before user confirmation
+- **Time to Launch**: Duration from trigger to campaign launch
+- **User Satisfaction**: Post-interaction feedback scores
+
+### Technical Performance Metrics  
+- **Response Time**: < 2 seconds for all bot interactions
+- **API Success Rate**: > 99% successful Reddit discovery calls
+- **Session Persistence**: Zero data loss during bot restarts
+- **Error Recovery Rate**: % of errors resolved without user intervention
+
+### Business Impact Metrics
+- **Daily Active Users**: Unique users per day
+- **Campaign Launch Rate**: Successful campaigns per session
+- **Discovery Quality**: User-reported relevance of discovered subreddits
+- **Time Savings**: Reduction vs. manual CLI workflow
+
+## Deployment and Infrastructure
+
+### Railway Configuration
+```yaml
+# railway.toml
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "services/slack_bot/Dockerfile"
+
+[deploy]
+startCommand = "python bot.py"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+
+[variables]
+SLACK_BOT_TOKEN = { $ref = "SLACK_BOT_TOKEN" }
+SLACK_APP_TOKEN = { $ref = "SLACK_APP_TOKEN" }  
+OPENROUTER_API_KEY = { $ref = "OPENROUTER_API_KEY" }
+FIRECRAWL_API_KEY = { $ref = "FIRECRAWL_API_KEY" }
+PERPLEXITY_API_KEY = { $ref = "PERPLEXITY_API_KEY" }
+REDDIT_API_URL = { $ref = "REDDIT_API_URL" }
+GUMLOOP_API_KEY = { $ref = "GUMLOOP_API_KEY" }
+REDIS_URL = { $ref = "REDIS_URL" }
+```
+
+## Security and Privacy
+
+### Data Protection
+- **Session Encryption**: All session data encrypted at rest
+- **Temporary Storage**: 24-hour TTL for all user data
+- **No Persistent Storage**: User conversations not permanently stored
+- **Secure Transmission**: HTTPS/TLS for all API communications
+
+### Access Control
+- **Slack Workspace Restriction**: Bot limited to authorized workspaces
+- **User Authentication**: Slack user verification for all interactions
+- **Rate Limiting**: Per-user and per-workspace request limits
+- **Audit Logging**: All user actions logged for security review
+
+## Future Enhancements
+
+### Phase 2 Features
+- **Multi-language Support**: Localization for global teams
+- **Advanced Analytics**: Campaign performance dashboards
+- **Team Collaboration**: Shared sessions and approval workflows
+- **Custom Integrations**: Webhook support for other platforms
+
+### Phase 3 Features  
+- **AI-Powered Insights**: Predictive subreddit recommendations
+- **Automated Optimization**: Self-improving parameter suggestions
+- **Enterprise Features**: SSO, advanced permissions, audit trails
+- **Mobile Experience**: Optimized mobile Slack interactions
+
+## Conclusion
+
+This Slack bot transforms the manual CLI workflow into an intuitive conversational experience while maintaining all existing functionality. The enhanced AI capabilities with Claude 4 Sonnet and MCP tools provide superior discovery quality, while the stateful design ensures seamless multi-step interactions.
+
+The bot serves as a force multiplier for Reddit discovery workflows, reducing time-to-launch from minutes to seconds while improving accuracy through advanced AI-powered analysis and iterative refinement. 
