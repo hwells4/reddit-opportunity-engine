@@ -762,7 +762,7 @@ async function getDatabaseProperties(databaseId: string) {
   }
 }
 
-// Add this function to create properties dynamically
+// Completely dynamic property mapper - works with any database structure
 function createDynamicProperties(
   availableProperties: any,
   subreddit?: string,
@@ -772,75 +772,129 @@ function createDynamicProperties(
   const properties: any = {};
   const title = `Reddit Opportunity Analysis - r/${subreddit || 'Unknown'} - ${new Date().toISOString().split('T')[0]}`;
 
-  // Handle each property based on the detected database structure
+  // Mapping rules for common property types - completely flexible
+  const dataMapping = {
+    // For title properties, use the report title
+    title: () => ({ title: [{ text: { content: title } }] }),
+    
+    // For email properties, use the provided email
+    email: () => ({ email: email || null }),
+    
+    // For rich_text properties, map based on common naming patterns
+    rich_text: (propName: string) => {
+      const name = propName.toLowerCase();
+      
+      if (name.includes('company') || name.includes('client') || name.includes('business')) {
+        return { rich_text: [{ text: { content: subreddit ? `r/${subreddit} Analysis` : 'Reddit Analysis' } }] };
+      }
+      if (name.includes('type') || name.includes('category')) {
+        return { rich_text: [{ text: { content: 'Reddit Opportunity Analysis' } }] };
+      }
+      if (name.includes('audience') || name.includes('target')) {
+        return { rich_text: [{ text: { content: `r/${subreddit || 'Unknown'} community` } }] };
+      }
+      if (name.includes('code') || name.includes('id') || name.includes('reference')) {
+        return { rich_text: [{ text: { content: runId || 'N/A' } }] };
+      }
+      if (name.includes('note') || name.includes('comment') || name.includes('summary')) {
+        return { rich_text: [{ text: { content: 'Generated via automated pipeline' } }] };
+      }
+      if (name.includes('contact') || name.includes('person')) {
+        return { rich_text: [{ text: { content: email || 'N/A' } }] };
+      }
+      if (name.includes('industry') || name.includes('niche')) {
+        return { rich_text: [{ text: { content: 'Social Media/Reddit Marketing' } }] };
+      }
+      // Default for unrecognized rich_text fields
+      return { rich_text: [{ text: { content: 'Reddit Opportunity Analysis' } }] };
+    },
+    
+    // For phone properties
+    phone_number: () => ({ phone_number: null }),
+    
+    // For number properties, map based on naming patterns
+    number: (propName: string) => {
+      const name = propName.toLowerCase();
+      if (name.includes('report') && name.includes('count')) {
+        return { number: 1 }; // This is one report
+      }
+      if (name.includes('value') || name.includes('price')) {
+        return { number: null }; // Let user fill this
+      }
+      return { number: 1 }; // Default to 1
+    },
+    
+    // For date properties
+    date: () => ({ date: { start: new Date().toISOString() } }),
+    
+    // For select properties, try to find a suitable option
+    select: (propName: string, prop: any) => {
+      const name = propName.toLowerCase();
+      const options = prop.select?.options || [];
+      
+      if (name.includes('status')) {
+        // Look for completion-related options
+        const goodOptions = options.find((opt: any) => 
+          ['Generated', 'Complete', 'Done', 'Delivered', 'Ready', 'Active', 'New'].includes(opt.name)
+        );
+        if (goodOptions) return { select: { name: goodOptions.name } };
+      }
+      
+      if (name.includes('automation')) {
+        const autoOptions = options.find((opt: any) => 
+          ['Full-Auto', 'Automated', 'Auto'].includes(opt.name)
+        );
+        if (autoOptions) return { select: { name: autoOptions.name } };
+      }
+      
+      // Default to first option if available
+      if (options.length > 0) {
+        return { select: { name: options[0].name } };
+      }
+      return null;
+    },
+    
+    // For status properties (newer Notion feature)
+    status: (propName: string, prop: any) => {
+      const options = prop.status?.options || [];
+      const goodOptions = options.find((opt: any) => 
+        ['Generated', 'Complete', 'Done', 'Delivered', 'Ready', 'Active'].includes(opt.name)
+      );
+      if (goodOptions) return { status: { name: goodOptions.name } };
+      if (options.length > 0) return { status: { name: options[0].name } };
+      return null;
+    },
+    
+    // For multi-select properties
+    multi_select: (propName: string, prop: any) => {
+      const name = propName.toLowerCase();
+      if (name.includes('tag') || name.includes('category')) {
+        return { multi_select: [{ name: 'Reddit Analysis' }] };
+      }
+      return { multi_select: [] };
+    }
+  };
+
+  // Apply mapping to each property in the database
   Object.keys(availableProperties).forEach(propName => {
     const prop = availableProperties[propName];
+    const mapper = dataMapping[prop.type as keyof typeof dataMapping];
     
-    switch (propName) {
-      case 'Company':
-        if (prop.type === 'title') {
-          properties[propName] = {
-            title: [{ text: { content: title } }],
-          };
+    if (mapper) {
+      let result;
+      if (typeof mapper === 'function') {
+        if (prop.type === 'rich_text' || prop.type === 'number') {
+          result = (mapper as (propName: string) => any)(propName);
+        } else if (prop.type === 'select' || prop.type === 'status' || prop.type === 'multi_select') {
+          result = (mapper as (propName: string, prop: any) => any)(propName, prop);
+        } else {
+          result = (mapper as () => any)();
         }
-        break;
-        
-      case 'Contact Email':
-        if (prop.type === 'email') {
-          properties[propName] = {
-            email: email || null,
-          };
-        }
-        break;
-        
-      case 'Report Type':
-        if (prop.type === 'rich_text') {
-          properties[propName] = {
-            rich_text: [{ text: { content: 'Reddit Opportunity Analysis' } }],
-          };
-        }
-        break;
-        
-      case 'Target Audience':
-        if (prop.type === 'rich_text') {
-          properties[propName] = {
-            rich_text: [{ text: { content: `r/${subreddit || 'Unknown'} community` } }],
-          };
-        }
-        break;
-        
-      case 'Report Code':
-        if (prop.type === 'rich_text') {
-          properties[propName] = {
-            rich_text: [{ text: { content: runId || 'N/A' } }],
-          };
-        }
-        break;
-        
-      case 'Report Status':
-        if (prop.type === 'status') {
-          // For status type, we need to use one of the available options
-          // Let's try 'Generated' or the first available option
-          const statusOptions = prop.status?.options || [];
-          const generatedOption = statusOptions.find((opt: any) => 
-            ['Generated', 'Complete', 'Done', 'Finished', 'Ready'].includes(opt.name)
-          );
-          
-          if (generatedOption) {
-            properties[propName] = {
-              status: { name: generatedOption.name },
-            };
-          } else if (statusOptions.length > 0) {
-            properties[propName] = {
-              status: { name: statusOptions[0].name },
-            };
-          }
-        }
-        break;
-        
-      default:
-        // Skip any properties we don't recognize
-        break;
+      }
+      
+      if (result) {
+        properties[propName] = result;
+      }
     }
   });
 
