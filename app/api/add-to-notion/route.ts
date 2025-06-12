@@ -976,11 +976,12 @@ async function createBrandedHomepageFromTemplate({
     if ((templatePage as any).icon) {
       const templateIcon = (templatePage as any).icon;
       // Only copy icon if it has at least one valid property
-      if (templateIcon.emoji || templateIcon.external || templateIcon.file || templateIcon.custom_emoji) {
+      // Valid icon types: emoji, external, file (for custom uploaded icons)
+      if (templateIcon.emoji || templateIcon.external || templateIcon.file) {
         createPageData.icon = templateIcon;
         console.log('Copying icon:', templateIcon);
       } else {
-        console.log('Template icon exists but has no valid properties, skipping');
+        console.log('Template icon exists but has no valid properties, skipping. Icon object:', templateIcon);
       }
     }
     
