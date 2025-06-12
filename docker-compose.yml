@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  reddit-engine:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NOTION_API_KEY=${NOTION_API_KEY}
+      - NOTION_DATABASE_ID=${NOTION_DATABASE_ID}
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next 

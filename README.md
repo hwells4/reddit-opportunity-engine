@@ -28,3 +28,34 @@ Continue building your app on:
 2. Deploy your chats from the v0 interface
 3. Changes are automatically pushed to this repository
 4. Vercel deploys the latest version from this repository
+
+## Notion Integration with Template Support
+
+The `/api/add-to-notion` endpoint now supports using Notion templates for consistent branding and formatting.
+
+### Template Usage
+
+**Step 1: Create Templates in Notion**
+1. Create a parent page template in Notion with your desired branding/structure
+2. Create child page templates for strategy and comprehensive reports
+3. Copy the page IDs from the URLs (the 32-character string after the last slash)
+
+**Step 2: Use Templates in API Calls**
+```json
+{
+  "strategyReport": "# Your markdown content...",
+  "comprehensiveReport": "# Your markdown content...",
+  "subreddit": "entrepreneurship",
+  "email": "client@example.com",
+  "runId": "run-123",
+  "parentTemplateId": "abc123def456...",
+  "strategyTemplateId": "def456ghi789...",
+  "comprehensiveTemplateId": "ghi789jkl012..."
+}
+```
+
+**Benefits:**
+- ✅ Edit templates directly in Notion's visual interface
+- ✅ Consistent branding across all reports
+- ✅ Template structure + dynamic content
+- ✅ Falls back to programmatic creation if no template provided
