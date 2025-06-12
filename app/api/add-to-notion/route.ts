@@ -734,56 +734,46 @@ function createBlocksFromMarkdown(markdown: string): any[] {
       blocks.push({
         type: "heading_1",
         heading_1: {
-          rich_text: [
-            {
-              text: {
-                content: line.substring(2),
-              },
-            },
-          ],
+          rich_text: parseRichText(line.substring(2)),
         },
       });
     } else if (line.startsWith('## ')) {
       blocks.push({
         type: "heading_2",
         heading_2: {
-          rich_text: [
-            {
-              text: {
-                content: line.substring(3),
-              },
-            },
-          ],
+          rich_text: parseRichText(line.substring(3)),
         },
       });
     } else if (line.startsWith('### ')) {
       blocks.push({
         type: "heading_3",
         heading_3: {
-          rich_text: [
-            {
-              text: {
-                content: line.substring(4),
-              },
-            },
-          ],
+          rich_text: parseRichText(line.substring(4)),
+        },
+      });
+    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      blocks.push({
+        type: "bulleted_list_item",
+        bulleted_list_item: {
+          rich_text: parseRichText(line.substring(2)),
+        },
+      });
+    } else if (/^\d+\.\s/.test(line)) {
+      blocks.push({
+        type: "numbered_list_item",
+        numbered_list_item: {
+          rich_text: parseRichText(line.replace(/^\d+\.\s/, '')),
         },
       });
     } else if (line.trim() !== '') {
       // Split long lines to avoid Notion's 2000 character limit
       if (line.length > 1900) {
         const lineChunks = splitLongLine(line, 1900);
-        lineChunks.forEach(chunk => {
+        lineChunks.forEach((chunk: string) => {
           blocks.push({
             type: "paragraph",
             paragraph: {
-              rich_text: [
-                {
-                  text: {
-                    content: chunk,
-                  },
-                },
-              ],
+              rich_text: parseRichText(chunk),
             },
           });
         });
@@ -791,13 +781,7 @@ function createBlocksFromMarkdown(markdown: string): any[] {
         blocks.push({
           type: "paragraph",
           paragraph: {
-            rich_text: [
-              {
-                text: {
-                  content: line,
-                },
-              },
-            ],
+            rich_text: parseRichText(line),
           },
         });
       }
@@ -805,6 +789,98 @@ function createBlocksFromMarkdown(markdown: string): any[] {
   }
   
   return blocks;
+}
+
+function parseRichText(text: string): any[] {
+  const richText: any[] = [];
+  let currentIndex = 0;
+  
+  // Simple regex patterns for markdown formatting
+  const patterns = [
+    { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
+    { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
+    { regex: /\*([^*]+)\*/g, type: 'italic' },
+    { regex: /`([^`]+)`/g, type: 'code' },
+  ];
+  
+  // Find all matches
+  const matches: Array<{start: number, end: number, type: string, text: string, url?: string}> = [];
+  
+  patterns.forEach(pattern => {
+    let match;
+    const regex = new RegExp(pattern.regex);
+    while ((match = regex.exec(text)) !== null) {
+      if (pattern.type === 'link') {
+        matches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          type: pattern.type,
+          text: match[1],
+          url: match[2]
+        });
+      } else {
+        matches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          type: pattern.type,
+          text: match[1]
+        });
+      }
+    }
+  });
+  
+  // Sort matches by start position
+  matches.sort((a, b) => a.start - b.start);
+  
+  // Build rich text array
+  matches.forEach(match => {
+    // Add plain text before this match
+    if (currentIndex < match.start) {
+      const plainText = text.substring(currentIndex, match.start);
+      if (plainText) {
+        richText.push({
+          text: { content: plainText }
+        });
+      }
+    }
+    
+    // Add formatted text
+    const textObj: any = {
+      text: { content: match.text }
+    };
+    
+    if (match.type === 'link') {
+      textObj.text.link = { url: match.url };
+    } else if (match.type === 'bold') {
+      textObj.annotations = { bold: true };
+    } else if (match.type === 'italic') {
+      textObj.annotations = { italic: true };
+    } else if (match.type === 'code') {
+      textObj.annotations = { code: true };
+    }
+    
+    richText.push(textObj);
+    currentIndex = match.end;
+  });
+  
+  // Add remaining plain text
+  if (currentIndex < text.length) {
+    const remainingText = text.substring(currentIndex);
+    if (remainingText) {
+      richText.push({
+        text: { content: remainingText }
+      });
+    }
+  }
+  
+  // If no matches found, return plain text
+  if (richText.length === 0) {
+    richText.push({
+      text: { content: text }
+    });
+  }
+  
+  return richText;
 }
 
 async function createReportPageFromTemplate({
