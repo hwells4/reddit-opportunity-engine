@@ -972,16 +972,28 @@ async function createBrandedHomepageFromTemplate({
       },
     };
 
-    // Copy icon if it exists
+    // Copy icon if it exists and is valid
     if ((templatePage as any).icon) {
-      createPageData.icon = (templatePage as any).icon;
-      console.log('Copying icon:', (templatePage as any).icon);
+      const templateIcon = (templatePage as any).icon;
+      // Only copy icon if it has at least one valid property
+      if (templateIcon.emoji || templateIcon.external || templateIcon.file || templateIcon.custom_emoji) {
+        createPageData.icon = templateIcon;
+        console.log('Copying icon:', templateIcon);
+      } else {
+        console.log('Template icon exists but has no valid properties, skipping');
+      }
     }
     
-    // Copy cover if it exists  
+    // Copy cover if it exists and is valid
     if ((templatePage as any).cover) {
-      createPageData.cover = (templatePage as any).cover;
-      console.log('Copying cover:', (templatePage as any).cover);
+      const templateCover = (templatePage as any).cover;
+      // Only copy cover if it has valid properties
+      if (templateCover.external || templateCover.file) {
+        createPageData.cover = templateCover;
+        console.log('Copying cover:', templateCover);
+      } else {
+        console.log('Template cover exists but has no valid properties, skipping');
+      }
     }
 
     // Create the new page with visual branding
