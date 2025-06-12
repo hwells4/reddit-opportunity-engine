@@ -944,14 +944,18 @@ async function createBrandedHomepageFromTemplate({
 }) {
   // Use template if provided, otherwise create basic branded page
   if (templatePageId) {
-    // Get the template page structure
-    const templateBlocks = await notion.blocks.children.list({ 
-      block_id: templatePageId,
-      page_size: 100 
+    console.log(`Creating branded homepage from template ${templatePageId} as child of ${parentPageId}`);
+    
+    // Get the template page to copy its properties (including icon and cover)
+    const templatePage = await notion.pages.retrieve({ page_id: templatePageId });
+    console.log('Template page retrieved:', {
+      id: templatePageId,
+      hasIcon: !!(templatePage as any).icon,
+      hasCover: !!(templatePage as any).cover
     });
 
-    // Create new page as child of database entry
-    const newPage = await notion.pages.create({
+    // Create new page with template's visual properties
+    const createPageData: any = {
       parent: {
         page_id: parentPageId,
       },
@@ -966,12 +970,47 @@ async function createBrandedHomepageFromTemplate({
           ],
         },
       },
-      // Start with template blocks
-      children: templateBlocks.results.map((block: any) => {
-        const { id, ...blockWithoutId } = block;
-        return replaceTemplateContent(blockWithoutId, subreddit, email, runId, clientType, metadata);
-      }),
+    };
+
+    // Copy icon if it exists
+    if ((templatePage as any).icon) {
+      createPageData.icon = (templatePage as any).icon;
+      console.log('Copying icon:', (templatePage as any).icon);
+    }
+    
+    // Copy cover if it exists  
+    if ((templatePage as any).cover) {
+      createPageData.cover = (templatePage as any).cover;
+      console.log('Copying cover:', (templatePage as any).cover);
+    }
+
+    // Create the new page with visual branding
+    const newPage = await notion.pages.create(createPageData);
+    console.log('New page created with branding:', {
+      id: newPage.id,
+      hasIcon: !!(newPage as any).icon,
+      hasCover: !!(newPage as any).cover
     });
+
+    // Get the template blocks and copy them
+    const templateBlocks = await notion.blocks.children.list({ 
+      block_id: templatePageId,
+      page_size: 100 
+    });
+
+    // Process and add template blocks with dynamic content
+    const processedBlocks = templateBlocks.results.map((block: any) => {
+      const { id, ...blockWithoutId } = block;
+      return replaceTemplateContent(blockWithoutId, subreddit, email, runId, clientType, metadata);
+    });
+
+    // Add all the template blocks to the new page
+    if (processedBlocks.length > 0) {
+      await notion.blocks.children.append({
+        block_id: newPage.id,
+        children: processedBlocks,
+      });
+    }
 
     // Add dynamic CTA at the end based on client type
     const ctaBlocks = generateCTABlocks(clientType);
