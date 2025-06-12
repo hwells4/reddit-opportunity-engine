@@ -15,6 +15,8 @@ interface ReportData {
   parentTemplateId?: string;
   strategyTemplateId?: string;
   comprehensiveTemplateId?: string;
+  homepageTemplateId?: string;
+  clientType?: 'demo' | 'existing' | 'prospect'; // For different CTAs
   metadata?: {
     generatedAt?: string;
     analysisType?: string;
@@ -34,6 +36,8 @@ export async function POST(request: Request) {
       parentTemplateId,
       strategyTemplateId,
       comprehensiveTemplateId,
+      homepageTemplateId,
+      clientType,
       metadata 
     } = body;
 
@@ -106,17 +110,30 @@ export async function POST(request: Request) {
           metadata,
         });
 
+    // Create the branded homepage from template (child of database entry)
+    const brandedHomepage = await createBrandedHomepageFromTemplate({
+      templatePageId: homepageTemplateId || process.env.NOTION_HOMEPAGE_TEMPLATE_ID,
+      parentPageId: parentPage.id,
+      subreddit,
+      email,
+      runId,
+      clientType,
+      metadata,
+    });
+
     const results = {
       parentPageId: parentPage.id,
       parentPageUrl: `https://notion.so/${parentPage.id.replace(/-/g, '')}`,
+      brandedHomepageId: brandedHomepage.id,
+      brandedHomepageUrl: `https://notion.so/${brandedHomepage.id.replace(/-/g, '')}`,
       childPages: [] as Array<{ id: string; url: string; title: string }>,
     };
 
-    // Create strategy report page if provided
+    // Create strategy report page if provided (as child of branded homepage)
     if (strategyReport) {
       const strategyPage = await createReportPageFromTemplate({
         templatePageId: strategyTemplateId,
-        parentPageId: parentPage.id,
+        parentPageId: brandedHomepage.id, // Child of branded homepage, not database entry
         title: `Strategy Report - r/${subreddit || 'Unknown'}`,
         content: strategyReport,
         reportType: 'strategy',
@@ -129,11 +146,11 @@ export async function POST(request: Request) {
       });
     }
 
-    // Create comprehensive report page if provided
+    // Create comprehensive report page if provided (as child of branded homepage)
     if (comprehensiveReport) {
       const comprehensivePage = await createReportPageFromTemplate({
         templatePageId: comprehensiveTemplateId,
-        parentPageId: parentPage.id,
+        parentPageId: brandedHomepage.id, // Child of branded homepage, not database entry
         title: `Comprehensive Analysis - r/${subreddit || 'Unknown'}`,
         content: comprehensiveReport,
         reportType: 'comprehensive',
@@ -146,22 +163,14 @@ export async function POST(request: Request) {
       });
     }
 
-    // NOW create the clean branded landing page (outside database) with links to reports
-    const brandedLandingPage = await createBrandedLandingPage({
-      subreddit,
-      email,
-      runId,
-      childPages: results.childPages,
-    });
-
     return NextResponse.json({
       success: true,
       message: "Reports successfully added to Notion",
       data: {
         ...results,
-        // This is the clean branded page to share with clients
-        shareableUrl: `https://notion.so/${brandedLandingPage.id.replace(/-/g, '')}`,
-        brandedLandingPageId: brandedLandingPage.id,
+        // Share the branded homepage URL with clients
+        shareableUrl: results.brandedHomepageUrl,
+        note: "Use shareableUrl for clean client presentation with branded homepage"
       },
     });
 
@@ -914,72 +923,41 @@ function createDynamicProperties(
   return properties;
 }
 
-async function createBrandedLandingPage({
+
+
+async function createBrandedHomepageFromTemplate({
+  templatePageId,
+  parentPageId,
   subreddit,
   email,
   runId,
-  childPages,
+  clientType,
+  metadata,
 }: {
+  templatePageId?: string;
+  parentPageId: string;
   subreddit?: string;
   email?: string;
   runId?: string;
-  childPages: Array<{ id: string; url: string; title: string }>;
+  clientType?: 'demo' | 'existing' | 'prospect';
+  metadata?: any;
 }) {
-  const currentDate = new Date().toLocaleDateString();
+  // Use template if provided, otherwise create basic branded page
+  if (templatePageId) {
+    // Get the template page structure
+    const templateBlocks = await notion.blocks.children.list({ 
+      block_id: templatePageId,
+      page_size: 100 
+    });
 
-  // Create a page outside the database - need a workspace/parent page
-  // For now, we'll create it as a child of the database page, but this could be improved
-  const response = await notion.pages.create({
-    parent: {
-      type: "page_id", 
-      page_id: process.env.NOTION_PARENT_PAGE_ID || process.env.NOTION_DATABASE_ID!,
-    },
-    properties: {
-      title: {
-        title: [
-          {
-            text: {
-              content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`,
-            },
-          },
-        ],
+    // Create new page as child of database entry
+    const newPage = await notion.pages.create({
+      parent: {
+        page_id: parentPageId,
       },
-    },
-    children: [
-      // Header section with branding
-      {
-        type: "heading_1",
-        heading_1: {
-          rich_text: [
-            {
-              text: {
-                content: "Dodo Digital",
-              },
-            },
-          ],
-        },
-      },
-      {
-        type: "paragraph",
-        paragraph: {
-          rich_text: [
-            {
-              text: {
-                content: "Audience Research & Automation",
-              },
-            },
-          ],
-        },
-      },
-      {
-        type: "divider",
-        divider: {},
-      },
-      // Main title
-      {
-        type: "heading_1",
-        heading_1: {
-          rich_text: [
+      properties: {
+        title: {
+          title: [
             {
               text: {
                 content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`,
@@ -988,83 +966,235 @@ async function createBrandedLandingPage({
           ],
         },
       },
-      // Personalized intro (like 7FigureDocs example)
-      {
-        type: "paragraph",
-        paragraph: {
-          rich_text: [
+      // Start with template blocks
+      children: templateBlocks.results.map((block: any) => {
+        const { id, ...blockWithoutId } = block;
+        return replaceTemplateContent(blockWithoutId, subreddit, email, runId, clientType, metadata);
+      }),
+    });
+
+    // Add dynamic CTA at the end based on client type
+    const ctaBlocks = generateCTABlocks(clientType);
+    if (ctaBlocks.length > 0) {
+      await notion.blocks.children.append({
+        block_id: newPage.id,
+        children: ctaBlocks,
+      });
+    }
+
+    return newPage;
+  } else {
+    // Fallback: create basic branded page without template
+    return notion.pages.create({
+      parent: {
+        page_id: parentPageId,
+      },
+      properties: {
+        title: {
+          title: [
             {
               text: {
-                content: `Analysis completed on ${currentDate} • Generated by Reddit Opportunity Engine`,
+                content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`,
               },
             },
           ],
         },
       },
-      {
-        type: "paragraph",
-        paragraph: {
-          rich_text: [
-            {
-              text: {
-                content: "Thanks for your interest in understanding your target audience! I've put together detailed research reports that show how your target audiences actually talk about their pain points and what motivates them to take action.",
+      children: [
+        {
+          type: "heading_1",
+          heading_1: {
+            rich_text: [
+              {
+                text: {
+                  content: "Dodo Digital",
+                },
               },
-            },
-          ],
+            ],
+          },
         },
-      },
-      {
-        type: "paragraph",
-        paragraph: {
-          rich_text: [
-            {
-              text: {
-                content: "Each report analyzes Reddit conversations to extract the exact language people use: their pain points, emotions, and the phrases that resonate. Everything is linked back to the original conversations, so you can see the full context.",
+        {
+          type: "paragraph",
+          paragraph: {
+            rich_text: [
+              {
+                text: {
+                  content: "Audience Research & Automation",
+                },
               },
-            },
-          ],
+            ],
+          },
         },
-      },
+        {
+          type: "divider",
+          divider: {},
+        },
+        {
+          type: "heading_1",
+          heading_1: {
+            rich_text: [
+              {
+                text: {
+                  content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`,
+                },
+              },
+            ],
+          },
+        },
+        {
+          type: "paragraph",
+          paragraph: {
+            rich_text: [
+              {
+                text: {
+                  content: `Analysis completed on ${new Date().toLocaleDateString()} • Generated by Reddit Opportunity Engine`,
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  }
+}
+
+function replaceTemplateContent(block: any, subreddit?: string, email?: string, runId?: string, clientType?: 'demo' | 'existing' | 'prospect', metadata?: any): any {
+  // Replace dynamic content in text blocks
+  if (block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3') {
+    const headingType = block.type as 'heading_1' | 'heading_2' | 'heading_3';
+    if (block[headingType]?.rich_text) {
+      block[headingType].rich_text = block[headingType].rich_text.map((text: any) => {
+        if (text.text?.content) {
+          text.text.content = replacePlaceholders(text.text.content, subreddit, email, runId, clientType, metadata);
+        }
+        return text;
+      });
+    }
+  }
+
+  if (block.type === 'paragraph') {
+    if (block.paragraph?.rich_text) {
+      block.paragraph.rich_text = block.paragraph.rich_text.map((text: any) => {
+        if (text.text?.content) {
+          text.text.content = replacePlaceholders(text.text.content, subreddit, email, runId, clientType, metadata);
+        }
+        return text;
+      });
+    }
+  }
+
+  return block;
+}
+
+function replacePlaceholders(content: string, subreddit?: string, email?: string, runId?: string, clientType?: 'demo' | 'existing' | 'prospect', metadata?: any): string {
+  const clientName = email ? email.split('@')[0] : 'there';
+  const companyName = email ? email.split('@')[1]?.split('.')[0] || 'your company' : 'your company';
+  
+  return content
+    .replace(/\{\{Company Name\}\}/g, companyName)
+    .replace(/\{\{Contact Name\}\}/g, clientName)
+    .replace(/\{\{Report Name\}\}/g, `Reddit Analysis for r/${subreddit || 'Unknown'}`)
+    .replace(/\{\{Audience\}\}/g, `r/${subreddit || 'Unknown'} community members`)
+    .replace(/{DYNAMIC_TITLE}/g, `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`)
+    .replace(/{SUBREDDIT}/g, subreddit || 'Unknown')
+    .replace(/{CLIENT_EMAIL}/g, email || 'Unknown')
+    .replace(/{RUN_ID}/g, runId || 'N/A')
+    .replace(/{DATE}/g, new Date().toLocaleDateString())
+    .replace(/{CLIENT_GREETING}/g, `Hey ${clientName}!`)
+    .replace(/{ANALYSIS_DETAILS}/g, `Reddit community analysis for r/${subreddit || 'Unknown'}`);
+}
+
+function generateCTABlocks(clientType?: 'demo' | 'existing' | 'prospect'): any[] {
+  if (clientType === 'demo') {
+    return [
       {
         type: "divider",
         divider: {},
       },
-      // Report links section
       {
         type: "heading_2",
         heading_2: {
           rich_text: [
             {
               text: {
-                content: "📊 Your Reports",
+                content: "🚀 Want More Insights Like This?",
               },
             },
           ],
         },
       },
-      // Add child page links
-      ...childPages.map(page => ({
-        type: "paragraph" as const,
+      {
+        type: "paragraph",
         paragraph: {
           rich_text: [
             {
               text: {
-                content: `📄 ${page.title}`,
-                link: {
-                  url: page.url,
-                },
-              },
-            },
-            {
-              text: {
-                content: " - Click to view the full analysis",
+                content: "This is just a taste of what we can do for your marketing campaigns. Get detailed audience intelligence reports for any Reddit community or social platform.",
               },
             },
           ],
         },
-      })),
-    ],
-  });
+      },
+      {
+        type: "paragraph",
+        paragraph: {
+          rich_text: [
+            {
+              text: {
+                content: "📧 Email harrison@dododigital.com to discuss pricing and get started with regular audience research.",
+              },
+            },
+          ],
+        },
+      },
+    ];
+  } else if (clientType === 'existing') {
+    return [
+      {
+        type: "divider",
+        divider: {},
+      },
+      {
+        type: "heading_2",
+        heading_2: {
+          rich_text: [
+            {
+              text: {
+                content: "Questions or Need Another Report?",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "paragraph",
+        paragraph: {
+          rich_text: [
+            {
+              text: {
+                content: "Hope you found this analysis helpful! If you have any questions about implementing these insights or want to request analysis for another community, just let me know.",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "paragraph",
+        paragraph: {
+          rich_text: [
+            {
+              text: {
+                content: "📧 Reply to your original email or reach out via Slack - I'll get back to you within 48 hours!",
+              },
+            },
+          ],
+        },
+      },
+    ];
+  } else {
+    // Default/prospect - no CTA
+    return [];
+  }
+}
 
-  return response;
-} 
+ 
