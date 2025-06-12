@@ -972,24 +972,12 @@ async function createBrandedHomepageFromTemplate({
       },
     };
 
-    // Copy icon if it exists and is valid
-    if ((templatePage as any).icon) {
-      const templateIcon = (templatePage as any).icon;
-      // Only copy icon if it has at least one valid property
-      // Valid icon types: emoji, external, file (for custom uploaded icons)
-      if (templateIcon.emoji || templateIcon.external || templateIcon.file) {
-        // Clean the icon object - only include properties that have values
-        const cleanIcon: any = { type: templateIcon.type };
-        if (templateIcon.emoji) cleanIcon.emoji = templateIcon.emoji;
-        if (templateIcon.external) cleanIcon.external = templateIcon.external;
-        if (templateIcon.file) cleanIcon.file = templateIcon.file;
-        
-        createPageData.icon = cleanIcon;
-        console.log('Copying cleaned icon:', cleanIcon);
-      } else {
-        console.log('Template icon exists but has no valid properties, skipping. Icon object:', templateIcon);
-      }
-    }
+    // For now, just use a simple emoji icon instead of copying template icon
+    // TODO: Fix template icon copying later
+    createPageData.icon = {
+      type: "emoji",
+      emoji: "📊"
+    };
     
     // Copy cover if it exists and is valid
     if ((templatePage as any).cover) {
