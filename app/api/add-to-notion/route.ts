@@ -978,8 +978,14 @@ async function createBrandedHomepageFromTemplate({
       // Only copy icon if it has at least one valid property
       // Valid icon types: emoji, external, file (for custom uploaded icons)
       if (templateIcon.emoji || templateIcon.external || templateIcon.file) {
-        createPageData.icon = templateIcon;
-        console.log('Copying icon:', templateIcon);
+        // Clean the icon object - only include properties that have values
+        const cleanIcon: any = { type: templateIcon.type };
+        if (templateIcon.emoji) cleanIcon.emoji = templateIcon.emoji;
+        if (templateIcon.external) cleanIcon.external = templateIcon.external;
+        if (templateIcon.file) cleanIcon.file = templateIcon.file;
+        
+        createPageData.icon = cleanIcon;
+        console.log('Copying cleaned icon:', cleanIcon);
       } else {
         console.log('Template icon exists but has no valid properties, skipping. Icon object:', templateIcon);
       }
