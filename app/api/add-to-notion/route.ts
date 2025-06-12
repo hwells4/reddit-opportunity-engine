@@ -681,6 +681,19 @@ async function createPageFromTemplate({
   return newPage;
 }
 
+function splitLongLine(line: string, maxLength: number): string[] {
+  const chunks: string[] = [];
+  let currentIndex = 0;
+  
+  while (currentIndex < line.length) {
+    const chunk = line.substring(currentIndex, currentIndex + maxLength);
+    chunks.push(chunk);
+    currentIndex += maxLength;
+  }
+  
+  return chunks;
+}
+
 function createBlocksFromMarkdown(markdown: string): any[] {
   const lines = markdown.split('\n');
   const blocks: any[] = [];
@@ -726,18 +739,37 @@ function createBlocksFromMarkdown(markdown: string): any[] {
         },
       });
     } else if (line.trim() !== '') {
-      blocks.push({
-        type: "paragraph",
-        paragraph: {
-          rich_text: [
-            {
-              text: {
-                content: line,
-              },
+      // Split long lines to avoid Notion's 2000 character limit
+      if (line.length > 1900) {
+        const lineChunks = splitLongLine(line, 1900);
+        lineChunks.forEach(chunk => {
+          blocks.push({
+            type: "paragraph",
+            paragraph: {
+              rich_text: [
+                {
+                  text: {
+                    content: chunk,
+                  },
+                },
+              ],
             },
-          ],
-        },
-      });
+          });
+        });
+      } else {
+        blocks.push({
+          type: "paragraph",
+          paragraph: {
+            rich_text: [
+              {
+                text: {
+                  content: line,
+                },
+              },
+            ],
+          },
+        });
+      }
     }
   }
   
