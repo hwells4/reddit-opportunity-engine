@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create the branded parent page
+    // Create the branded parent page in database (for internal tracking)
     const parentPage = parentTemplateId 
       ? await createPageFromTemplate({
           templatePageId: parentTemplateId,
@@ -149,7 +149,14 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message: "Reports successfully added to Notion",
-      data: results,
+      data: {
+        ...results,
+        // Share the first child page URL instead of database page
+        recommendedShareUrl: results.childPages.length > 0 
+          ? results.childPages[0].url 
+          : results.parentPageUrl,
+        note: "Use recommendedShareUrl for clean client presentation (no database properties shown)"
+      },
     });
 
   } catch (error) {
