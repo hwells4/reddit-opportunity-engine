@@ -423,32 +423,28 @@ async function createFullReportPage({
     children: children, // Just the header blocks
   });
 
-  // Add content chunks separately, ensuring each is under 2000 characters
+  // Prepare all content blocks, ensuring each is under 2000 characters
+  const contentBlocks: any[] = [];
   for (const chunk of chunks) {
     // Double-check chunk length and split further if needed
     if (chunk.length > 1900) {
       const subChunks = splitLongLine(chunk, 1900);
       for (const subChunk of subChunks) {
-        await notion.blocks.children.append({
-          block_id: response.id,
-          children: [{
-            type: "paragraph",
-            paragraph: {
-              rich_text: [
-                {
-                  text: {
-                    content: subChunk,
-                  },
+        contentBlocks.push({
+          type: "paragraph",
+          paragraph: {
+            rich_text: [
+              {
+                text: {
+                  content: subChunk,
                 },
-              ],
-            },
-          }],
+              },
+            ],
+          },
         });
       }
     } else {
-      await notion.blocks.children.append({
-        block_id: response.id,
-        children: [{
+              contentBlocks.push({
           type: "paragraph",
           paragraph: {
             rich_text: [
@@ -459,9 +455,18 @@ async function createFullReportPage({
               },
             ],
           },
-        }],
-      });
+        });
     }
+  }
+
+  // Add content in batches of 100 blocks (Notion's limit)
+  const batchSize = 100;
+  for (let i = 0; i < contentBlocks.length; i += batchSize) {
+    const batch = contentBlocks.slice(i, i + batchSize);
+    await notion.blocks.children.append({
+      block_id: response.id,
+      children: batch,
+    });
   }
 
   return response;

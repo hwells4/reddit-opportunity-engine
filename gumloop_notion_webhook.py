@@ -32,7 +32,7 @@ def function(meta, strategy):
             NOTION_API_URL,
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=30
+            timeout=120  # Increased timeout to 2 minutes for large reports
         )
         
         if response.status_code == 200:
@@ -56,4 +56,3 @@ def function(meta, strategy):
         }
     
     return success
-
