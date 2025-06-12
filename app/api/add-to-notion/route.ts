@@ -178,53 +178,39 @@ async function createBrandedParentPage({
   const currentDate = new Date().toISOString().split('T')[0];
   const title = `Reddit Opportunity Analysis - r/${subreddit || 'Unknown'} - ${currentDate}`;
 
+  // Get database properties to adapt to existing schema
+  const databaseProperties = await getDatabaseProperties(process.env.NOTION_DATABASE_ID!);
+  
+  // Create properties that match the existing database structure
+  const adaptedProperties = databaseProperties 
+    ? createDynamicProperties(databaseProperties, subreddit, email, runId)
+    : {
+        // Fallback to original structure if database detection fails
+        Name: {
+          title: [{ text: { content: title } }],
+        },
+        Subreddit: {
+          rich_text: [{ text: { content: subreddit || 'Unknown' } }],
+        },
+        Email: {
+          email: email || null,
+        },
+        "Run ID": {
+          rich_text: [{ text: { content: runId || 'N/A' } }],
+        },
+        Status: {
+          select: { name: 'Generated' },
+        },
+        "Generated Date": {
+          date: { start: new Date().toISOString() },
+        },
+      };
+
   const response = await notion.pages.create({
     parent: {
       database_id: process.env.NOTION_DATABASE_ID!,
     },
-    properties: {
-      // Adjust these property names based on your Notion database schema
-      Name: {
-        title: [
-          {
-            text: {
-              content: title,
-            },
-          },
-        ],
-      },
-      Subreddit: {
-        rich_text: [
-          {
-            text: {
-              content: subreddit || 'Unknown',
-            },
-          },
-        ],
-      },
-      Email: {
-        email: email || null,
-      },
-      "Run ID": {
-        rich_text: [
-          {
-            text: {
-              content: runId || 'N/A',
-            },
-          },
-        ],
-      },
-      Status: {
-        select: {
-          name: 'Generated',
-        },
-      },
-      "Generated Date": {
-        date: {
-          start: new Date().toISOString(),
-        },
-      },
-    },
+    properties: adaptedProperties,
     children: [
       {
         type: "heading_1",
@@ -260,55 +246,43 @@ async function createBrandedParentPage({
           rich_text: [
             {
               text: {
-                content: "How to Use These Reports",
+                content: "📋 How to Use These Reports",
               },
             },
           ],
         },
       },
       {
-        type: "numbered_list_item",
-        numbered_list_item: {
+        type: "bulleted_list_item",
+        bulleted_list_item: {
           rich_text: [
             {
               text: {
-                content: 'Quick Win: Search for "Actionable Takeaways" in each report for immediate messaging improvements',
+                content: "Review the Strategy Report for actionable insights and recommendations",
               },
             },
           ],
         },
       },
       {
-        type: "numbered_list_item",
-        numbered_list_item: {
+        type: "bulleted_list_item",
+        bulleted_list_item: {
           rich_text: [
             {
               text: {
-                content: 'Deep Dive: Review the "Key Themes" section to understand audience psychology',
+                content: "Examine the Comprehensive Analysis for detailed market research",
               },
             },
           ],
         },
       },
       {
-        type: "numbered_list_item",
-        numbered_list_item: {
+        type: "bulleted_list_item",
+        bulleted_list_item: {
           rich_text: [
             {
               text: {
-                content: 'Copy Inspiration: Use the "Audience Voice Highlights" for ad copy and landing pages',
-              },
-            },
-          ],
-        },
-      },
-      {
-        type: "numbered_list_item",
-        numbered_list_item: {
-          rich_text: [
-            {
-              text: {
-                content: 'Campaign Planning: Reference "User Needs" to prioritize messaging angles',
+                content: "Use the insights to optimize your marketing campaigns and content strategy",
               },
             },
           ],
@@ -324,7 +298,7 @@ async function createBrandedParentPage({
           rich_text: [
             {
               text: {
-                content: "📊 Your Custom Reports",
+                content: "📊 Report Contents",
               },
             },
           ],
@@ -336,7 +310,7 @@ async function createBrandedParentPage({
           rich_text: [
             {
               text: {
-                content: "Click on each report below to view the full analysis:",
+                content: "Your detailed reports are organized as child pages below. Click on each report to access the full analysis.",
               },
             },
           ],
@@ -796,110 +770,77 @@ function createDynamicProperties(
   runId?: string
 ): any {
   const properties: any = {};
+  const title = `Reddit Opportunity Analysis - r/${subreddit || 'Unknown'} - ${new Date().toISOString().split('T')[0]}`;
 
-  // Map common property names to your data
-  const propertyMappings = {
-    // Common variations for each field
-    title: ['Name', 'Title', 'Page Title', 'Page Name'],
-    subreddit: ['Subreddit', 'Reddit', 'Community', 'Sub'],
-    email: ['Email', 'Client Email', 'Contact', 'Client'],
-    runId: ['Run ID', 'RunID', 'Job ID', 'Process ID', 'ID'],
-    status: ['Status', 'State', 'Progress'],
-    date: ['Generated Date', 'Created Date', 'Date', 'Created', 'Generated'],
-  };
-
-  // Find matching properties in your database
+  // Handle each property based on the detected database structure
   Object.keys(availableProperties).forEach(propName => {
     const prop = availableProperties[propName];
     
-    // Check for title/name property
-    if (propertyMappings.title.includes(propName) && prop.type === 'title') {
-      properties[propName] = {
-        title: [
-          {
-            text: {
-              content: `Reddit Opportunity Analysis - r/${subreddit || 'Unknown'} - ${new Date().toISOString().split('T')[0]}`,
-            },
-          },
-        ],
-      };
-    }
-    
-    // Check for subreddit property
-    else if (propertyMappings.subreddit.some(mapping => propName.includes(mapping)) && prop.type === 'rich_text') {
-      properties[propName] = {
-        rich_text: [
-          {
-            text: {
-              content: subreddit || 'Unknown',
-            },
-          },
-        ],
-      };
-    }
-    
-    // Check for email property
-    else if (propertyMappings.email.some(mapping => propName.includes(mapping))) {
-      if (prop.type === 'email') {
-        properties[propName] = {
-          email: email || null,
-        };
-      } else if (prop.type === 'rich_text') {
-        properties[propName] = {
-          rich_text: [
-            {
-              text: {
-                content: email || 'N/A',
-              },
-            },
-          ],
-        };
-      }
-    }
-    
-    // Check for run ID property
-    else if (propertyMappings.runId.some(mapping => propName.includes(mapping)) && prop.type === 'rich_text') {
-      properties[propName] = {
-        rich_text: [
-          {
-            text: {
-              content: runId || 'N/A',
-            },
-          },
-        ],
-      };
-    }
-    
-    // Check for status property
-    else if (propertyMappings.status.some(mapping => propName.includes(mapping)) && prop.type === 'select') {
-      // Use the first available select option or create 'Generated' if it exists
-      const selectOptions = prop.select?.options || [];
-      const generatedOption = selectOptions.find((opt: any) => 
-        ['Generated', 'Complete', 'Done', 'Finished'].includes(opt.name)
-      );
-      
-      if (generatedOption) {
-        properties[propName] = {
-          select: {
-            name: generatedOption.name,
-          },
-        };
-      } else if (selectOptions.length > 0) {
-        properties[propName] = {
-          select: {
-            name: selectOptions[0].name,
-          },
-        };
-      }
-    }
-    
-    // Check for date property
-    else if (propertyMappings.date.some(mapping => propName.includes(mapping)) && prop.type === 'date') {
-      properties[propName] = {
-        date: {
-          start: new Date().toISOString(),
-        },
-      };
+    switch (propName) {
+      case 'Company':
+        if (prop.type === 'title') {
+          properties[propName] = {
+            title: [{ text: { content: title } }],
+          };
+        }
+        break;
+        
+      case 'Contact Email':
+        if (prop.type === 'email') {
+          properties[propName] = {
+            email: email || null,
+          };
+        }
+        break;
+        
+      case 'Report Type':
+        if (prop.type === 'rich_text') {
+          properties[propName] = {
+            rich_text: [{ text: { content: 'Reddit Opportunity Analysis' } }],
+          };
+        }
+        break;
+        
+      case 'Target Audience':
+        if (prop.type === 'rich_text') {
+          properties[propName] = {
+            rich_text: [{ text: { content: `r/${subreddit || 'Unknown'} community` } }],
+          };
+        }
+        break;
+        
+      case 'Report Code':
+        if (prop.type === 'rich_text') {
+          properties[propName] = {
+            rich_text: [{ text: { content: runId || 'N/A' } }],
+          };
+        }
+        break;
+        
+      case 'Report Status':
+        if (prop.type === 'status') {
+          // For status type, we need to use one of the available options
+          // Let's try 'Generated' or the first available option
+          const statusOptions = prop.status?.options || [];
+          const generatedOption = statusOptions.find((opt: any) => 
+            ['Generated', 'Complete', 'Done', 'Finished', 'Ready'].includes(opt.name)
+          );
+          
+          if (generatedOption) {
+            properties[propName] = {
+              status: { name: generatedOption.name },
+            };
+          } else if (statusOptions.length > 0) {
+            properties[propName] = {
+              status: { name: statusOptions[0].name },
+            };
+          }
+        }
+        break;
+        
+      default:
+        // Skip any properties we don't recognize
+        break;
     }
   });
 
