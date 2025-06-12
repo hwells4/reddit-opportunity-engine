@@ -839,24 +839,44 @@ function parseRichText(text: string): any[] {
       const plainText = text.substring(currentIndex, match.start);
       if (plainText) {
         richText.push({
-          text: { content: plainText }
+          type: "text",
+          text: { content: plainText },
+          annotations: {
+            bold: false,
+            italic: false,
+            strikethrough: false,
+            underline: false,
+            code: false,
+            color: "default"
+          }
         });
       }
     }
     
     // Add formatted text
     const textObj: any = {
-      text: { content: match.text }
+      type: "text",
+      text: { 
+        content: match.text,
+      },
+      annotations: {
+        bold: false,
+        italic: false,
+        strikethrough: false,
+        underline: false,
+        code: false,
+        color: "default"
+      }
     };
     
     if (match.type === 'link') {
       textObj.text.link = { url: match.url };
     } else if (match.type === 'bold') {
-      textObj.annotations = { bold: true };
+      textObj.annotations.bold = true;
     } else if (match.type === 'italic') {
-      textObj.annotations = { italic: true };
+      textObj.annotations.italic = true;
     } else if (match.type === 'code') {
-      textObj.annotations = { code: true };
+      textObj.annotations.code = true;
     }
     
     richText.push(textObj);
@@ -868,7 +888,16 @@ function parseRichText(text: string): any[] {
     const remainingText = text.substring(currentIndex);
     if (remainingText) {
       richText.push({
-        text: { content: remainingText }
+        type: "text",
+        text: { content: remainingText },
+        annotations: {
+          bold: false,
+          italic: false,
+          strikethrough: false,
+          underline: false,
+          code: false,
+          color: "default"
+        }
       });
     }
   }
@@ -876,7 +905,16 @@ function parseRichText(text: string): any[] {
   // If no matches found, return plain text
   if (richText.length === 0) {
     richText.push({
-      text: { content: text }
+      type: "text",
+      text: { content: text },
+      annotations: {
+        bold: false,
+        italic: false,
+        strikethrough: false,
+        underline: false,
+        code: false,
+        color: "default"
+      }
     });
   }
   
