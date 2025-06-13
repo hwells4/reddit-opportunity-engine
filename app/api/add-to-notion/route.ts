@@ -750,9 +750,20 @@ function splitLongLine(line: string, maxLength: number): string[] {
   return chunks;
 }
 
+// 1. Add URL validation helper
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function createBlocksFromMarkdown(markdown: string): any[] {
+  // Only log the full markdown input for debugging
   debugLog('createBlocksFromMarkdown-input', { 
-    markdown: markdown.substring(0, 500) + (markdown.length > 500 ? '...' : ''),
+    markdown, // log the full markdown, not just a preview
     totalLength: markdown.length,
     lineCount: markdown.split('\n').length
   });
@@ -860,21 +871,7 @@ function createBlocksFromMarkdown(markdown: string): any[] {
         });
       }
     }
-
-    debugLog('createBlocksFromMarkdown-line', {
-      lineNumber: i + 1,
-      originalLine: line,
-      blockType,
-      content,
-      richTextBlocks: richText?.length || 0
-    });
   }
-  
-  debugLog('createBlocksFromMarkdown-output', {
-    inputLines: lines.length,
-    outputBlocks: blocks.length,
-    blockTypes: blocks.map(b => b.type)
-  });
   
   return blocks;
 }
@@ -889,8 +886,7 @@ interface MarkdownMatch {
 }
 
 function parseRichText(text: string): any[] {
-  debugLog('parseRichText-input', { text, length: text.length });
-  
+  // Remove/comment out debugLog('parseRichText-input', ...);
   if (!text || text.length === 0) {
     return [{
       type: "text",
@@ -979,19 +975,6 @@ function parseRichText(text: string): any[] {
   // Sort final matches by position
   filteredMatches.sort((a, b) => a.start - b.start);
   
-  debugLog('parseRichText-matches', { 
-    originalText: text,
-    totalMatches: matches.length,
-    filteredMatches: filteredMatches.length,
-    matches: filteredMatches.map(m => ({
-      type: m.type,
-      text: m.text,
-      start: m.start,
-      end: m.end,
-      rawMatch: m.rawMatch
-    }))
-  });
-
   // Build rich text array
   const richText: any[] = [];
   let currentIndex = 0;
@@ -1033,7 +1016,10 @@ function parseRichText(text: string): any[] {
     // Apply formatting based on match type
     switch (match.type) {
       case 'link':
-        textObj.text.link = { url: match.url };
+        if (match.url && isValidUrl(match.url)) {
+          textObj.text.link = { url: match.url };
+        }
+        // else: do not add the link property, treat as plain text
         break;
       case 'bold':
         textObj.annotations.bold = true;
@@ -1087,12 +1073,6 @@ function parseRichText(text: string): any[] {
       }
     });
   }
-
-  debugLog('parseRichText-output', { 
-    inputLength: text.length,
-    outputBlocks: richText.length,
-    richText: richText 
-  });
 
   return richText;
 }
