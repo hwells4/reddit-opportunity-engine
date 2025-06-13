@@ -190,6 +190,10 @@ export async function POST(request: Request) {
         shareableUrl: results.brandedHomepageUrl,
         note: "Use shareableUrl for clean client presentation with branded homepage"
       },
+      debug: {
+        strategyReport: strategyReport?.slice(0, 1000),
+        comprehensiveReport: comprehensiveReport?.slice(0, 1000)
+      }
     });
 
   } catch (error) {
