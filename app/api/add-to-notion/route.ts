@@ -6,6 +6,15 @@ const notion = new Client({
   auth: process.env.NOTION_API_KEY,
 });
 
+// Add debug logging utility
+const DEBUG = process.env.NODE_ENV === 'development' || process.env.NOTION_DEBUG === 'true';
+
+function debugLog(context: string, data: any) {
+  if (DEBUG) {
+    console.log(`[NOTION DEBUG - ${context}]:`, JSON.stringify(data, null, 2));
+  }
+}
+
 interface ReportData {
   strategyReport?: string;
   comprehensiveReport?: string;
@@ -27,6 +36,15 @@ interface ReportData {
 export async function POST(request: Request) {
   try {
     const body: ReportData = await request.json();
+    debugLog('POST-request-body', { 
+      hasStrategyReport: !!body.strategyReport,
+      hasComprehensiveReport: !!body.comprehensiveReport,
+      strategyReportLength: body.strategyReport?.length || 0,
+      comprehensiveReportLength: body.comprehensiveReport?.length || 0,
+      subreddit: body.subreddit,
+      email: body.email,
+      clientType: body.clientType
+    });
     const { 
       strategyReport, 
       comprehensiveReport, 
@@ -726,114 +744,252 @@ function splitLongLine(line: string, maxLength: number): string[] {
 }
 
 function createBlocksFromMarkdown(markdown: string): any[] {
+  debugLog('createBlocksFromMarkdown-input', { 
+    markdown: markdown.substring(0, 500) + (markdown.length > 500 ? '...' : ''),
+    totalLength: markdown.length,
+    lineCount: markdown.split('\n').length
+  });
+
   const lines = markdown.split('\n');
   const blocks: any[] = [];
   
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmedLine = line.trim();
+    
+    // Skip empty lines
+    if (trimmedLine === '') {
+      continue;
+    }
+
+    let blockType: string = "paragraph";
+    let content: string = "";
+    let richText: any[] = [];
+
     if (line.startsWith('# ')) {
+      blockType = "heading_1";
+      content = line.substring(2);
+      richText = parseRichText(content);
       blocks.push({
-        type: "heading_1",
-        heading_1: {
-          rich_text: parseRichText(line.substring(2)),
-        },
+        type: blockType,
+        heading_1: { rich_text: richText },
       });
     } else if (line.startsWith('## ')) {
+      blockType = "heading_2";
+      content = line.substring(3);
+      richText = parseRichText(content);
       blocks.push({
-        type: "heading_2",
-        heading_2: {
-          rich_text: parseRichText(line.substring(3)),
-        },
+        type: blockType,
+        heading_2: { rich_text: richText },
       });
     } else if (line.startsWith('### ')) {
+      blockType = "heading_3";
+      content = line.substring(4);
+      richText = parseRichText(content);
       blocks.push({
-        type: "heading_3",
-        heading_3: {
-          rich_text: parseRichText(line.substring(4)),
-        },
+        type: blockType,
+        heading_3: { rich_text: richText },
+      });
+    } else if (line.startsWith('#### ')) {
+      // Add support for heading_4 (h4 is not supported in Notion, convert to heading_3)
+      blockType = "heading_3";
+      content = line.substring(5);
+      richText = parseRichText(content);
+      blocks.push({
+        type: blockType,
+        heading_3: { rich_text: richText },
       });
     } else if (line.startsWith('- ') || line.startsWith('* ')) {
+      blockType = "bulleted_list_item";
+      content = line.substring(2);
+      richText = parseRichText(content);
       blocks.push({
-        type: "bulleted_list_item",
-        bulleted_list_item: {
-          rich_text: parseRichText(line.substring(2)),
-        },
+        type: blockType,
+        bulleted_list_item: { rich_text: richText },
       });
     } else if (/^\d+\.\s/.test(line)) {
+      blockType = "numbered_list_item";
+      content = line.replace(/^\d+\.\s/, '');
+      richText = parseRichText(content);
       blocks.push({
-        type: "numbered_list_item",
-        numbered_list_item: {
-          rich_text: parseRichText(line.replace(/^\d+\.\s/, '')),
-        },
+        type: blockType,
+        numbered_list_item: { rich_text: richText },
       });
-    } else if (line.trim() !== '') {
+    } else if (line.startsWith('> ')) {
+      // Add support for quotes
+      blockType = "quote";
+      content = line.substring(2);
+      richText = parseRichText(content);
+      blocks.push({
+        type: blockType,
+        quote: { rich_text: richText },
+      });
+    } else if (line.startsWith('---') || line.startsWith('***')) {
+      // Add support for dividers
+      blocks.push({
+        type: "divider",
+        divider: {},
+      });
+    } else {
+      // Regular paragraph
+      blockType = "paragraph";
+      content = line;
+      
       // Split long lines to avoid Notion's 2000 character limit
       if (line.length > 1900) {
         const lineChunks = splitLongLine(line, 1900);
         lineChunks.forEach((chunk: string) => {
+          richText = parseRichText(chunk);
           blocks.push({
-            type: "paragraph",
-            paragraph: {
-              rich_text: parseRichText(chunk),
-            },
+            type: blockType,
+            paragraph: { rich_text: richText },
           });
         });
       } else {
+        richText = parseRichText(content);
         blocks.push({
-          type: "paragraph",
-          paragraph: {
-            rich_text: parseRichText(line),
-          },
+          type: blockType,
+          paragraph: { rich_text: richText },
         });
       }
     }
+
+    debugLog('createBlocksFromMarkdown-line', {
+      lineNumber: i + 1,
+      originalLine: line,
+      blockType,
+      content,
+      richTextBlocks: richText?.length || 0
+    });
   }
+  
+  debugLog('createBlocksFromMarkdown-output', {
+    inputLines: lines.length,
+    outputBlocks: blocks.length,
+    blockTypes: blocks.map(b => b.type)
+  });
   
   return blocks;
 }
 
+interface MarkdownMatch {
+  start: number;
+  end: number;
+  type: 'link' | 'bold' | 'italic' | 'code' | 'strikethrough';
+  text: string;
+  url?: string;
+  rawMatch: string;
+}
+
 function parseRichText(text: string): any[] {
-  const richText: any[] = [];
-  let currentIndex = 0;
+  debugLog('parseRichText-input', { text, length: text.length });
   
-  // Simple regex patterns for markdown formatting
+  if (!text || text.length === 0) {
+    return [{
+      type: "text",
+      text: { content: "" },
+      annotations: {
+        bold: false,
+        italic: false,
+        strikethrough: false,
+        underline: false,
+        code: false,
+        color: "default"
+      }
+    }];
+  }
+
+  // Enhanced regex patterns with proper non-greedy matching
   const patterns = [
-    { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
-    { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
-    { regex: /\*([^*]+)\*/g, type: 'italic' },
-    { regex: /`([^`]+)`/g, type: 'code' },
+    // Links: [text](url) - highest priority
+    { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' as const, priority: 1 },
+    // Code: `text` - high priority to avoid conflicts with other formatting
+    { regex: /`([^`]+?)`/g, type: 'code' as const, priority: 2 },
+    // Bold: **text** or __text__
+    { regex: /\*\*([^*]+?)\*\*/g, type: 'bold' as const, priority: 3 },
+    { regex: /__([^_]+?)__/g, type: 'bold' as const, priority: 3 },
+    // Strikethrough: ~~text~~
+    { regex: /~~([^~]+?)~~/g, type: 'strikethrough' as const, priority: 4 },
+    // Italic: *text* or _text_ (lowest priority to avoid conflicts with bold)
+    { regex: /(?<!\*)\*([^*]+?)\*(?!\*)/g, type: 'italic' as const, priority: 5 },
+    { regex: /(?<!_)_([^_]+?)_(?!_)/g, type: 'italic' as const, priority: 5 },
   ];
-  
-  // Find all matches
-  const matches: Array<{start: number, end: number, type: string, text: string, url?: string}> = [];
+
+  // Find all matches with improved conflict resolution
+  const matches: MarkdownMatch[] = [];
   
   patterns.forEach(pattern => {
+    const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
     let match;
-    const regex = new RegExp(pattern.regex);
+    
     while ((match = regex.exec(text)) !== null) {
+      const matchData: MarkdownMatch = {
+        start: match.index,
+        end: match.index + match[0].length,
+        type: pattern.type,
+        text: pattern.type === 'link' ? match[1] : match[1],
+        rawMatch: match[0]
+      };
+      
       if (pattern.type === 'link') {
-        matches.push({
-          start: match.index,
-          end: match.index + match[0].length,
-          type: pattern.type,
-          text: match[1],
-          url: match[2]
-        });
-      } else {
-        matches.push({
-          start: match.index,
-          end: match.index + match[0].length,
-          type: pattern.type,
-          text: match[1]
-        });
+        matchData.url = match[2];
+      }
+      
+      matches.push(matchData);
+      
+      // Prevent infinite loops
+      if (regex.lastIndex === match.index) {
+        regex.lastIndex = match.index + 1;
       }
     }
   });
+
+  // Sort by priority first, then by start position
+  matches.sort((a, b) => {
+    const priorityA = patterns.find(p => p.type === a.type)?.priority || 999;
+    const priorityB = patterns.find(p => p.type === b.type)?.priority || 999;
+    
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB;
+    }
+    return a.start - b.start;
+  });
+
+  // Remove overlapping matches (keep higher priority ones)
+  const filteredMatches: MarkdownMatch[] = [];
+  for (const match of matches) {
+    const hasOverlap = filteredMatches.some(existing => 
+      (match.start >= existing.start && match.start < existing.end) ||
+      (match.end > existing.start && match.end <= existing.end) ||
+      (match.start <= existing.start && match.end >= existing.end)
+    );
+    
+    if (!hasOverlap) {
+      filteredMatches.push(match);
+    }
+  }
+
+  // Sort final matches by position
+  filteredMatches.sort((a, b) => a.start - b.start);
   
-  // Sort matches by start position
-  matches.sort((a, b) => a.start - b.start);
-  
+  debugLog('parseRichText-matches', { 
+    originalText: text,
+    totalMatches: matches.length,
+    filteredMatches: filteredMatches.length,
+    matches: filteredMatches.map(m => ({
+      type: m.type,
+      text: m.text,
+      start: m.start,
+      end: m.end,
+      rawMatch: m.rawMatch
+    }))
+  });
+
   // Build rich text array
-  matches.forEach(match => {
+  const richText: any[] = [];
+  let currentIndex = 0;
+
+  for (const match of filteredMatches) {
     // Add plain text before this match
     if (currentIndex < match.start) {
       const plainText = text.substring(currentIndex, match.start);
@@ -852,13 +1008,11 @@ function parseRichText(text: string): any[] {
         });
       }
     }
-    
-    // Add formatted text
+
+    // Create rich text object for the match
     const textObj: any = {
       type: "text",
-      text: { 
-        content: match.text,
-      },
+      text: { content: match.text },
       annotations: {
         bold: false,
         italic: false,
@@ -868,21 +1022,30 @@ function parseRichText(text: string): any[] {
         color: "default"
       }
     };
-    
-    if (match.type === 'link') {
-      textObj.text.link = { url: match.url };
-    } else if (match.type === 'bold') {
-      textObj.annotations.bold = true;
-    } else if (match.type === 'italic') {
-      textObj.annotations.italic = true;
-    } else if (match.type === 'code') {
-      textObj.annotations.code = true;
+
+    // Apply formatting based on match type
+    switch (match.type) {
+      case 'link':
+        textObj.text.link = { url: match.url };
+        break;
+      case 'bold':
+        textObj.annotations.bold = true;
+        break;
+      case 'italic':
+        textObj.annotations.italic = true;
+        break;
+      case 'code':
+        textObj.annotations.code = true;
+        break;
+      case 'strikethrough':
+        textObj.annotations.strikethrough = true;
+        break;
     }
-    
+
     richText.push(textObj);
     currentIndex = match.end;
-  });
-  
+  }
+
   // Add remaining plain text
   if (currentIndex < text.length) {
     const remainingText = text.substring(currentIndex);
@@ -901,7 +1064,7 @@ function parseRichText(text: string): any[] {
       });
     }
   }
-  
+
   // If no matches found, return plain text
   if (richText.length === 0) {
     richText.push({
@@ -917,7 +1080,13 @@ function parseRichText(text: string): any[] {
       }
     });
   }
-  
+
+  debugLog('parseRichText-output', { 
+    inputLength: text.length,
+    outputBlocks: richText.length,
+    richText: richText 
+  });
+
   return richText;
 }
 
