@@ -97,20 +97,8 @@ export async function POST(request: Request) {
     const reportType = extractReportType(metadata);
     const parentPageTitle = generateParentPageTitle({ email, metadata, reportType, date: new Date() });
 
-    // --- Create the branded homepage first (so we have the URL for the parent page link) ---
-    const brandedHomepage = await createBrandedHomepageFromTemplate({
-      templatePageId: homepageTemplateId || process.env.NOTION_HOMEPAGE_TEMPLATE_ID,
-      parentPageId: undefined as any, // Will set after parent page is created
-      subreddit,
-      email,
-      runId,
-      clientType,
-      metadata,
-    });
-    // We'll update the parentPageId after parent page creation
-
     // --- Create the parent page in the database (minimal, just a link) ---
-    const homepageUrl = `https://notion.so/${brandedHomepage.id.replace(/-/g, '')}`;
+    // We'll create the homepage next and update the parent page with the homepage URL if needed
     const parentPage = await notion.pages.create({
       parent: {
         database_id: process.env.NOTION_DATABASE_ID!,
@@ -125,11 +113,26 @@ export async function POST(request: Request) {
         },
         // Add other properties as needed (email, runId, etc.)
       },
-      children: createParentPageContent({ homepageUrl }),
+      // We'll add the homepage link as a child block after homepage creation
     });
 
-    // --- Update the homepage to set the correct parentPageId (if needed) ---
-    // (Implementation depends on Notion API constraints; may need to re-create or update the homepage)
+    // --- Now create the branded homepage as a child of the parent page ---
+    const brandedHomepage = await createBrandedHomepageFromTemplate({
+      templatePageId: homepageTemplateId || process.env.NOTION_HOMEPAGE_TEMPLATE_ID,
+      parentPageId: parentPage.id,
+      subreddit,
+      email,
+      runId,
+      clientType,
+      metadata,
+    });
+    const homepageUrl = `https://notion.so/${brandedHomepage.id.replace(/-/g, '')}`;
+
+    // --- Add the homepage link to the parent page as a child block ---
+    await notion.blocks.children.append({
+      block_id: parentPage.id,
+      children: createParentPageContent({ homepageUrl }),
+    });
 
     // --- Generate the homepage intro using LLM (OpenRouter) ---
     const llmPrompt = generateHomepageIntroPrompt({
