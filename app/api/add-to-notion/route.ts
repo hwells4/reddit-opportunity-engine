@@ -261,13 +261,9 @@ export async function POST(request: Request) {
         paragraph: { rich_text: [{ text: { content: `Hey ${contactName} and the rest of the ${companyName} team!` } }] }
       },
       { type: "divider", divider: {} },
-      // AI-Generated Intro/Summary ONLY
+      // AI-Generated Intro/Summary - Parse as markdown
       ...(homepageIntro ? [
-        {
-          type: "paragraph",
-          paragraph: { rich_text: [{ text: { content: homepageIntro } }] }
-        },
-        { type: "divider", divider: {} }
+        ...createBlocksFromMarkdown(homepageIntro)
       ] : []),
       // Report Links
       ...(strategyUrl ? [{

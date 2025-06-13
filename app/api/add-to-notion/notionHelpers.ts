@@ -60,7 +60,19 @@ export function generateHomepageIntroPrompt({ contactName, companyName, strategy
   strategyReport: string;
   comprehensiveReport: string;
 }): string {
-  return `Write a concise introduction for a client-facing Notion page. Start with a greeting to "${contactName} and the ${companyName} team". Then, in 1–2 sentences, summarize the value of the attached reports. Finish with 2–3 bullet points describing what the client will find in the Strategy Report and Comprehensive Analysis. Do not exceed this length.\n\nHere are the reports:\n\nStrategy Report:\n${strategyReport}\n\nComprehensive Report:\n${comprehensiveReport}`;
+  return `Write a concise intro for a client report page. Do NOT include any greeting (that's already handled). Write 1-2 direct sentences explaining who we analyzed and what we wanted to learn. Then explain how they can use this for marketing: landing page copy, content ideas, conversion optimization, sales scripts, etc.
+
+Use bullet points with **bold** headings for the Strategy Report and Comprehensive Analysis sections. Write in normal business language - don't call the reports "insightful" or use fluffy marketing speak.
+
+Add a P.S. at the end: "P.S. Try copying the full report and uploading it as context to ChatGPT or Claude. Use Opus 4 or o3 and ask it to write content for you or optimize existing content. You'll likely be surprised by the results."
+
+Here are the reports:
+
+Strategy Report:
+${strategyReport.slice(0, 1500)}
+
+Comprehensive Report:
+${comprehensiveReport.slice(0, 1500)}`;
 }
 
 /**
