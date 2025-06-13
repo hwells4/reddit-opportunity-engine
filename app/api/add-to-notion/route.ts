@@ -1112,10 +1112,12 @@ async function createReportPageFromTemplate({
   reportType: 'strategy' | 'comprehensive';
   subreddit: string;
 }) {
+  // Always parse markdown into Notion blocks
+  const blocks = createBlocksFromMarkdown(content);
+
   if (templatePageId) {
     // Use template if provided
     const templateBlocks = await notion.blocks.children.list({ block_id: templatePageId });
-    
     const newPage = await notion.pages.create({
       parent: {
         page_id: parentPageId,
@@ -1142,31 +1144,31 @@ async function createReportPageFromTemplate({
           type: "divider",
           divider: {},
         },
+        // Add parsed markdown blocks
+        ...blocks,
       ],
     });
-
-    // Add content in chunks to avoid 100-block limit
-    const chunks = chunkText(content, 1800);
-    for (const chunk of chunks) {
-      const blocks = createBlocksFromMarkdown(chunk);
-      if (blocks.length > 0) {
-        await notion.blocks.children.append({
-          block_id: newPage.id,
-          children: blocks,
-        });
-      }
-    }
-
     return newPage;
   } else {
-    // Fall back to original method
-    return createFullReportPage({
-      parentPageId,
-      title,
-      content,
-      reportType,
-      subreddit,
+    // No template, just create a page with parsed markdown blocks
+    const newPage = await notion.pages.create({
+      parent: {
+        page_id: parentPageId,
+      },
+      properties: {
+        title: {
+          title: [
+            {
+              text: {
+                content: title,
+              },
+            },
+          ],
+        },
+      },
+      children: blocks,
     });
+    return newPage;
   }
 }
 
