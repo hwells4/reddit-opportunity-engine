@@ -96,7 +96,6 @@ export async function POST(request: Request) {
     const contactName = extractContactName(email);
     const reportType = extractReportType(metadata);
     const parentPageTitle = generateParentPageTitle({ email, metadata, reportType, date: new Date() });
-
     // --- Create the parent page in the database (minimal, just a link) ---
     // We'll create the homepage next and update the parent page with the homepage URL if needed
     const parentPage = await notion.pages.create({
@@ -127,14 +126,25 @@ export async function POST(request: Request) {
     });
 
     // --- Now create the branded homepage as a child of the parent page ---
-    const brandedHomepage = await createBrandedHomepageFromTemplate({
-      templatePageId: homepageTemplateId || process.env.NOTION_HOMEPAGE_TEMPLATE_ID,
-      parentPageId: parentPage.id,
-      subreddit,
-      email,
-      runId,
-      clientType,
-      metadata,
+    const brandedHomepage = await notion.pages.create({
+      parent: {
+        page_id: parentPage.id,
+      },
+      properties: {
+        title: {
+          title: [
+            {
+              text: {
+                content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`,
+              },
+            },
+          ],
+        },
+      },
+      icon: {
+        type: "emoji",
+        emoji: "📊"
+      },
     });
     const homepageUrl = `https://notion.so/${brandedHomepage.id.replace(/-/g, '')}`;
 
@@ -198,12 +208,77 @@ export async function POST(request: Request) {
       });
     }
 
-    // --- Update the homepage with the intro and links ---
-    const homepageBlocks = createHomepageBlocks({
-      intro: homepageIntro,
-      strategyUrl,
-      comprehensiveUrl,
-    });
+    // --- Build homepage blocks in the correct order, with no duplicates ---
+    const homepageBlocks: any[] = [
+      // Title
+      {
+        type: "heading_1",
+        heading_1: { rich_text: [{ text: { content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}` } }] }
+      },
+      // Personalized Greeting
+      {
+        type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: `Hey ${contactName} and the rest of the ${companyName} team!` } }] }
+      },
+      { type: "divider", divider: {} },
+      // Report Section
+      {
+        type: "heading_2",
+        heading_2: { rich_text: [{ text: { content: `📊 Report 1: Reddit Analysis for r/${subreddit || 'Unknown'}` } }] }
+      },
+      {
+        type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: `*Target Audience: r/${subreddit || 'Unknown'} community members*` } }] }
+      },
+      {
+        type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: "***Read Your Report by Clicking the Link Below** 👇🏼" } }] }
+      },
+      // Report Links
+      ...(strategyUrl ? [{
+        type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: "Strategy Report", link: { url: strategyUrl } } }] }
+      }] : []),
+      ...(comprehensiveUrl ? [{
+        type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: "Comprehensive Analysis", link: { url: comprehensiveUrl } } }] }
+      }] : []),
+      { type: "divider", divider: {} },
+      // Questions Section
+      {
+        type: "heading_2",
+        heading_2: { rich_text: [{ text: { content: "Questions?" } }] }
+      },
+      {
+        type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: "Email harrison@dododigital.com and I'll get back to you within 48 hours!" } }] }
+      },
+      { type: "divider", divider: {} },
+      // CTA Section
+      ...(clientType === 'demo' || clientType === 'prospect' ? [
+        {
+          type: "heading_2",
+          heading_2: { rich_text: [{ text: { content: "🚀 Want More Insights Like This?" } }] }
+        },
+        {
+          type: "paragraph",
+          paragraph: { rich_text: [{ text: { content: "This is just a taste of what we can do for your marketing campaigns. Get detailed audience intelligence reports for any Reddit community or social platform." } }] }
+        },
+        {
+          type: "paragraph",
+          paragraph: { rich_text: [{ text: { content: "📧 Email harrison@dododigital.com to discuss pricing and get started with regular audience research." } }] }
+        },
+        { type: "divider", divider: {} }
+      ] : []),
+      // LLM-Generated Intro/Summary (if you want it)
+      ...(homepageIntro ? [
+        {
+          type: "paragraph",
+          paragraph: { rich_text: [{ text: { content: homepageIntro } }] }
+        }
+      ] : [])
+    ];
+
     await notion.blocks.children.append({
       block_id: brandedHomepage.id,
       children: homepageBlocks,
