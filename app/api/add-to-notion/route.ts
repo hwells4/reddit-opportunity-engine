@@ -181,6 +181,9 @@ export async function POST(request: Request) {
       });
     }
 
+    debugLog('strategyReport-preview', strategyReport?.slice(0, 500));
+    debugLog('comprehensiveReport-preview', comprehensiveReport?.slice(0, 500));
+
     return NextResponse.json({
       success: true,
       message: "Reports successfully added to Notion",
@@ -1666,5 +1669,29 @@ function generateCTABlocks(clientType?: 'demo' | 'existing' | 'prospect'): any[]
     return [];
   }
 }
+
+// When creating blocks from markdown, log the parsed blocks
+// Patch createBlocksFromMarkdown to log output
+const originalCreateBlocksFromMarkdown = createBlocksFromMarkdown;
+function createBlocksFromMarkdownWithDebug(markdown: string): any[] {
+  const blocks = originalCreateBlocksFromMarkdown(markdown);
+  debugLog('parsedBlocks', { preview: markdown.slice(0, 200), blockCount: blocks.length, blocks: blocks.slice(0, 5) });
+  return blocks;
+}
+// Replace the function globally
+(global as any).createBlocksFromMarkdown = createBlocksFromMarkdownWithDebug;
+
+// When sending to Notion, log the payload
+// Patch notion.pages.create and notion.blocks.children.append
+const originalPagesCreate = notion.pages.create.bind(notion.pages);
+notion.pages.create = async function(payload: any) {
+  debugLog('notion.pages.create-payload', payload);
+  return await originalPagesCreate(payload);
+};
+const originalBlocksChildrenAppend = notion.blocks.children.append.bind(notion.blocks.children);
+notion.blocks.children.append = async function(payload: any) {
+  debugLog('notion.blocks.children.append-payload', payload);
+  return await originalBlocksChildrenAppend(payload);
+};
 
  
