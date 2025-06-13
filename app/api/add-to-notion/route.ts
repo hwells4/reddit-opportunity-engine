@@ -104,14 +104,24 @@ export async function POST(request: Request) {
         database_id: process.env.NOTION_DATABASE_ID!,
       },
       properties: {
-        Name: {
+        Company: {
           title: [
             {
               text: { content: parentPageTitle },
             },
           ],
         },
-        // Add other properties as needed (email, runId, etc.)
+        "Report Type": {
+          rich_text: [{ text: { content: reportType || '' } }]
+        },
+        "Contact Email": {
+          email: email || ''
+        },
+        // Optionally fill these if you have the data:
+        // "Target Audience": { rich_text: [{ text: { content: ... } }] },
+        // "Report Status": { select: { name: "Generated" } },
+        // "Report Code": { rich_text: [{ text: { content: runId || '' } }] },
+        // "Client ID": { rich_text: [{ text: { content: ... } }] },
       },
       // We'll add the homepage link as a child block after homepage creation
     });
