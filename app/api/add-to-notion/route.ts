@@ -1118,6 +1118,17 @@ async function createReportPageFromTemplate({
   if (templatePageId) {
     // Use template if provided
     const templateBlocks = await notion.blocks.children.list({ block_id: templatePageId });
+    // Compose all blocks: template, divider, then markdown blocks
+    const allBlocks = [
+      ...templateBlocks.results.map((block: any) => {
+        const { id, ...blockWithoutId } = block;
+        return blockWithoutId;
+      }),
+      { type: "divider", divider: {} },
+      ...blocks,
+    ];
+    // Create the page with up to 100 blocks
+    const initialBlocks = allBlocks.slice(0, 100);
     const newPage = await notion.pages.create({
       parent: {
         page_id: parentPageId,
@@ -1133,24 +1144,20 @@ async function createReportPageFromTemplate({
           ],
         },
       },
-      children: [
-        // First add template blocks
-        ...templateBlocks.results.map((block: any) => {
-          const { id, ...blockWithoutId } = block;
-          return blockWithoutId;
-        }),
-        // Then add a divider and the actual content
-        {
-          type: "divider",
-          divider: {},
-        },
-        // Add parsed markdown blocks
-        ...blocks,
-      ],
+      children: initialBlocks,
     });
+    // Append the rest in batches of 100
+    for (let i = 100; i < allBlocks.length; i += 100) {
+      const batch = allBlocks.slice(i, i + 100);
+      await notion.blocks.children.append({
+        block_id: newPage.id,
+        children: batch,
+      });
+    }
     return newPage;
   } else {
     // No template, just create a page with parsed markdown blocks
+    const initialBlocks = blocks.slice(0, 100);
     const newPage = await notion.pages.create({
       parent: {
         page_id: parentPageId,
@@ -1166,8 +1173,16 @@ async function createReportPageFromTemplate({
           ],
         },
       },
-      children: blocks,
+      children: initialBlocks,
     });
+    // Append the rest in batches of 100
+    for (let i = 100; i < blocks.length; i += 100) {
+      const batch = blocks.slice(i, i + 100);
+      await notion.blocks.children.append({
+        block_id: newPage.id,
+        children: batch,
+      });
+    }
     return newPage;
   }
 }
