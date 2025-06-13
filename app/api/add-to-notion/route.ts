@@ -901,29 +901,137 @@ function parseRichText(text: string): any[] {
     }];
   }
 
-  // Only match links as the highest priority, then other markdown
-  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
+  // Helper to parse non-link markdown (bold, italic, code, strikethrough)
+  function parseNonLinkMarkdown(segment: string): any[] {
+    // Order: code > bold > italic > strikethrough
+    // Code
+    const codePattern = /`([^`]+?)`/g;
+    let codeMatch, lastIdx = 0, result: any[] = [];
+    while ((codeMatch = codePattern.exec(segment)) !== null) {
+      if (codeMatch.index > lastIdx) {
+        result = result.concat(parseNonLinkMarkdown(segment.substring(lastIdx, codeMatch.index)));
+      }
+      result.push({
+        type: "text",
+        text: { content: codeMatch[1] },
+        annotations: {
+          bold: false,
+          italic: false,
+          strikethrough: false,
+          underline: false,
+          code: true,
+          color: "default"
+        }
+      });
+      lastIdx = codeMatch.index + codeMatch[0].length;
+    }
+    if (lastIdx < segment.length) segment = segment.substring(lastIdx);
+    else return result;
+
+    // Bold
+    const boldPattern = /\*\*([^*]+?)\*\*|__([^_]+?)__/g;
+    let boldMatch;
+    lastIdx = 0;
+    let boldResult: any[] = [];
+    while ((boldMatch = boldPattern.exec(segment)) !== null) {
+      if (boldMatch.index > lastIdx) {
+        boldResult = boldResult.concat(parseNonLinkMarkdown(segment.substring(lastIdx, boldMatch.index)));
+      }
+      const boldText = boldMatch[1] || boldMatch[2];
+      boldResult.push({
+        type: "text",
+        text: { content: boldText },
+        annotations: {
+          bold: true,
+          italic: false,
+          strikethrough: false,
+          underline: false,
+          code: false,
+          color: "default"
+        }
+      });
+      lastIdx = boldMatch.index + boldMatch[0].length;
+    }
+    if (lastIdx < segment.length) segment = segment.substring(lastIdx);
+    else return result.concat(boldResult);
+
+    // Italic
+    const italicPattern = /(?<!\*)\*([^*]+?)\*(?!\*)|(?<!_)_([^_]+?)_(?!_)/g;
+    let italicMatch;
+    lastIdx = 0;
+    let italicResult: any[] = [];
+    while ((italicMatch = italicPattern.exec(segment)) !== null) {
+      if (italicMatch.index > lastIdx) {
+        italicResult = italicResult.concat(parseNonLinkMarkdown(segment.substring(lastIdx, italicMatch.index)));
+      }
+      const italicText = italicMatch[1] || italicMatch[2];
+      italicResult.push({
+        type: "text",
+        text: { content: italicText },
+        annotations: {
+          bold: false,
+          italic: true,
+          strikethrough: false,
+          underline: false,
+          code: false,
+          color: "default"
+        }
+      });
+      lastIdx = italicMatch.index + italicMatch[0].length;
+    }
+    if (lastIdx < segment.length) segment = segment.substring(lastIdx);
+    else return result.concat(boldResult, italicResult);
+
+    // Strikethrough
+    const strikePattern = /~~([^~]+?)~~/g;
+    let strikeMatch;
+    lastIdx = 0;
+    let strikeResult: any[] = [];
+    while ((strikeMatch = strikePattern.exec(segment)) !== null) {
+      if (strikeMatch.index > lastIdx) {
+        strikeResult = strikeResult.concat(parseNonLinkMarkdown(segment.substring(lastIdx, strikeMatch.index)));
+      }
+      strikeResult.push({
+        type: "text",
+        text: { content: strikeMatch[1] },
+        annotations: {
+          bold: false,
+          italic: false,
+          strikethrough: true,
+          underline: false,
+          code: false,
+          color: "default"
+        }
+      });
+      lastIdx = strikeMatch.index + strikeMatch[0].length;
+    }
+    if (lastIdx < segment.length) {
+      strikeResult.push({
+        type: "text",
+        text: { content: segment.substring(lastIdx) },
+        annotations: {
+          bold: false,
+          italic: false,
+          strikethrough: false,
+          underline: false,
+          code: false,
+          color: "default"
+        }
+      });
+    }
+    return result.concat(boldResult, italicResult, strikeResult);
+  }
+
+  // First, split by links
+  const linkPattern = /\[\[?([^\]]+?)\]?\]\(([^)]+)\)/g;
   let lastIndex = 0;
   const richText: any[] = [];
   let match;
   while ((match = linkPattern.exec(text)) !== null) {
-    // Add plain text before the link
+    // Add plain text before the link, with formatting
     if (match.index > lastIndex) {
       const plainText = text.substring(lastIndex, match.index);
-      if (plainText) {
-        richText.push({
-          type: "text",
-          text: { content: plainText },
-          annotations: {
-            bold: false,
-            italic: false,
-            strikethrough: false,
-            underline: false,
-            code: false,
-            color: "default"
-          }
-        });
-      }
+      richText.push(...parseNonLinkMarkdown(plainText));
     }
     // Add the link (if valid)
     const linkText = match[1];
@@ -958,32 +1066,13 @@ function parseRichText(text: string): any[] {
     }
     lastIndex = match.index + match[0].length;
   }
-  // Add any remaining plain text after the last link
+  // Add any remaining plain text after the last link, with formatting
   if (lastIndex < text.length) {
     const remainingText = text.substring(lastIndex);
-    if (remainingText) {
-      richText.push({
-        type: "text",
-        text: { content: remainingText },
-        annotations: {
-          bold: false,
-          italic: false,
-          strikethrough: false,
-          underline: false,
-          code: false,
-          color: "default"
-        }
-      });
-    }
+    richText.push(...parseNonLinkMarkdown(remainingText));
   }
-  // If no links were found, fall back to the original markdown formatting (bold, italic, etc.)
+  // If no links or formatting were found, return plain text
   if (richText.length === 0) {
-    // ... original fallback logic for bold, italic, code, strikethrough ...
-    // (copy the rest of your original parseRichText for non-link markdown)
-    // For brevity, you can keep your previous implementation for non-link markdown here.
-    // But links should always be split out as above.
-    // ...
-    // For now, just return the whole text as plain if no links found
     return [{
       type: "text",
       text: { content: text },
