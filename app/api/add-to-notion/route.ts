@@ -1,5 +1,15 @@
 import { NextResponse } from "next/server";
 import { Client } from "@notionhq/client";
+import {
+  generateParentPageTitle,
+  extractCompanyName,
+  extractContactName,
+  extractReportType,
+  generateHomepageIntroPrompt,
+  createParentPageContent,
+  getHomepageIntroFromLLM,
+  createHomepageBlocks
+} from "./notionHelpers";
 
 // Initialize Notion client
 const notion = new Client({
@@ -81,105 +91,110 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create the branded parent page in database (for internal tracking)
-    const parentPage = parentTemplateId 
-      ? await createPageFromTemplate({
-          templatePageId: parentTemplateId,
-          parentDatabaseId: process.env.NOTION_DATABASE_ID!,
-          title: `Reddit Opportunity Analysis - r/${subreddit || 'Unknown'} - ${new Date().toISOString().split('T')[0]}`,
-          properties: {
-            Subreddit: {
-              rich_text: [
-                {
-                  text: {
-                    content: subreddit || 'Unknown',
-                  },
-                },
-              ],
-            },
-            Email: {
-              email: email || null,
-            },
-            "Run ID": {
-              rich_text: [
-                {
-                  text: {
-                    content: runId || 'N/A',
-                  },
-                },
-              ],
-            },
-            Status: {
-              select: {
-                name: 'Generated',
-              },
-            },
-            "Generated Date": {
-              date: {
-                start: new Date().toISOString(),
-              },
-            },
-          },
-        })
-      : await createBrandedParentPage({
-          subreddit,
-          email,
-          runId,
-          metadata,
-        });
+    // --- Modularized: Extract names and report type ---
+    const companyName = extractCompanyName(email);
+    const contactName = extractContactName(email);
+    const reportType = extractReportType(metadata);
+    const parentPageTitle = generateParentPageTitle({ email, metadata, reportType, date: new Date() });
 
-    // Create the branded homepage from template (child of database entry)
+    // --- Create the branded homepage first (so we have the URL for the parent page link) ---
     const brandedHomepage = await createBrandedHomepageFromTemplate({
       templatePageId: homepageTemplateId || process.env.NOTION_HOMEPAGE_TEMPLATE_ID,
-      parentPageId: parentPage.id,
+      parentPageId: undefined as any, // Will set after parent page is created
       subreddit,
       email,
       runId,
       clientType,
       metadata,
     });
+    // We'll update the parentPageId after parent page creation
 
+    // --- Create the parent page in the database (minimal, just a link) ---
+    const homepageUrl = `https://notion.so/${brandedHomepage.id.replace(/-/g, '')}`;
+    const parentPage = await notion.pages.create({
+      parent: {
+        database_id: process.env.NOTION_DATABASE_ID!,
+      },
+      properties: {
+        Name: {
+          title: [
+            {
+              text: { content: parentPageTitle },
+            },
+          ],
+        },
+        // Add other properties as needed (email, runId, etc.)
+      },
+      children: createParentPageContent({ homepageUrl }),
+    });
+
+    // --- Update the homepage to set the correct parentPageId (if needed) ---
+    // (Implementation depends on Notion API constraints; may need to re-create or update the homepage)
+
+    // --- Generate the homepage intro using LLM (OpenRouter) ---
+    const llmPrompt = generateHomepageIntroPrompt({
+      contactName,
+      companyName,
+      strategyReport: strategyReport || '',
+      comprehensiveReport: comprehensiveReport || '',
+    });
+    const homepageIntro = await getHomepageIntroFromLLM(llmPrompt);
+
+    // --- Create the strategy and comprehensive report pages as children of the homepage ---
     const results = {
       parentPageId: parentPage.id,
       parentPageUrl: `https://notion.so/${parentPage.id.replace(/-/g, '')}`,
       brandedHomepageId: brandedHomepage.id,
-      brandedHomepageUrl: `https://notion.so/${brandedHomepage.id.replace(/-/g, '')}`,
+      brandedHomepageUrl: homepageUrl,
       childPages: [] as Array<{ id: string; url: string; title: string }>,
     };
 
-    // Create strategy report page if provided (as child of branded homepage)
+    let strategyUrl: string | undefined;
+    let comprehensiveUrl: string | undefined;
     if (strategyReport) {
       const strategyPage = await createReportPageFromTemplate({
         templatePageId: strategyTemplateId,
-        parentPageId: brandedHomepage.id, // Child of branded homepage, not database entry
+        parentPageId: brandedHomepage.id, // Child of branded homepage
         title: `Strategy Report - r/${subreddit || 'Unknown'}`,
         content: strategyReport,
         reportType: 'strategy',
         subreddit: subreddit || 'Unknown',
       });
+      strategyUrl = `https://notion.so/${strategyPage.id.replace(/-/g, '')}`;
       results.childPages.push({
         id: strategyPage.id,
-        url: `https://notion.so/${strategyPage.id.replace(/-/g, '')}`,
+        url: strategyUrl,
         title: 'Strategy Report',
       });
     }
 
-    // Create comprehensive report page if provided (as child of branded homepage)
     if (comprehensiveReport) {
       const comprehensivePage = await createReportPageFromTemplate({
         templatePageId: comprehensiveTemplateId,
-        parentPageId: brandedHomepage.id, // Child of branded homepage, not database entry
+        parentPageId: brandedHomepage.id, // Child of branded homepage
         title: `Comprehensive Analysis - r/${subreddit || 'Unknown'}`,
         content: comprehensiveReport,
         reportType: 'comprehensive',
         subreddit: subreddit || 'Unknown',
       });
+      comprehensiveUrl = `https://notion.so/${comprehensivePage.id.replace(/-/g, '')}`;
       results.childPages.push({
         id: comprehensivePage.id,
-        url: `https://notion.so/${comprehensivePage.id.replace(/-/g, '')}`,
+        url: comprehensiveUrl,
         title: 'Comprehensive Analysis',
       });
     }
+
+    // --- Update the homepage with the intro and links ---
+    const homepageBlocks = createHomepageBlocks({
+      intro: homepageIntro,
+      strategyUrl,
+      comprehensiveUrl,
+    });
+    await notion.blocks.children.append({
+      block_id: brandedHomepage.id,
+      children: homepageBlocks,
+    });
 
     debugLog('strategyReport-preview', strategyReport?.slice(0, 500));
     debugLog('comprehensiveReport-preview', comprehensiveReport?.slice(0, 500));
@@ -198,7 +213,6 @@ export async function POST(request: Request) {
         comprehensiveReport: comprehensiveReport?.slice(0, 1000)
       }
     });
-
   } catch (error) {
     console.error("Error adding to Notion:", error);
     return NextResponse.json(
