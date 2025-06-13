@@ -8,6 +8,7 @@ import {
   generateHomepageIntroPrompt,
   createParentPageContent,
   getHomepageIntroFromLLM,
+  generateReportTitleFromLLM,
   createHomepageBlocks
 } from "./notionHelpers";
 
@@ -23,6 +24,18 @@ function debugLog(context: string, data: any) {
   if (DEBUG) {
     console.log(`[NOTION DEBUG - ${context}]:`, JSON.stringify(data, null, 2));
   }
+}
+
+// Helper function to get the banner image URL from Railway
+function getBannerImageUrl(): string {
+  // Get the Railway URL from environment or use a default
+  const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+    : process.env.VERCEL_URL 
+    ? `https://${process.env.VERCEL_URL}`
+    : 'https://reddit-opportunity-engine-production.up.railway.app';
+  
+  return `${baseUrl}/dodo-digital-audience-research-banner.png`;
 }
 
 interface ReportData {
@@ -43,6 +56,23 @@ interface ReportData {
   };
 }
 
+// Function to generate an AI-powered title based on the reports
+async function generateSmartReportTitle(strategyReport?: string, comprehensiveReport?: string): Promise<string> {
+  try {
+    if (!strategyReport && !comprehensiveReport) {
+      return 'Market Research Analysis';
+    }
+    
+    return await generateReportTitleFromLLM({ 
+      strategyReport: strategyReport || '', 
+      comprehensiveReport: comprehensiveReport || '' 
+    });
+  } catch (error) {
+    console.error('Error generating smart title:', error);
+    return 'Market Research Analysis';
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body: ReportData = await request.json();
@@ -58,7 +88,7 @@ export async function POST(request: Request) {
     const { 
       strategyReport, 
       comprehensiveReport, 
-      subreddit, 
+      subreddit,
       email, 
       runId, 
       parentTemplateId,
@@ -68,6 +98,10 @@ export async function POST(request: Request) {
       clientType,
       metadata 
     } = body;
+    
+    // Generate a smart title based on the reports using AI
+    const smartTitle = await generateSmartReportTitle(strategyReport, comprehensiveReport);
+    debugLog('ai-generated-title', { smartTitle });
 
     // Validate required fields
     if (!strategyReport && !comprehensiveReport) {
@@ -135,7 +169,7 @@ export async function POST(request: Request) {
           title: [
             {
               text: {
-                content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`,
+                content: smartTitle, // Use AI-generated title instead of subreddit reference
               },
             },
           ],
@@ -144,6 +178,12 @@ export async function POST(request: Request) {
       icon: {
         type: "emoji",
         emoji: "📊"
+      },
+      cover: {
+        type: "external",
+        external: {
+          url: getBannerImageUrl()
+        }
       },
     });
     const homepageUrl = `https://notion.so/${brandedHomepage.id.replace(/-/g, '')}`;
@@ -178,10 +218,10 @@ export async function POST(request: Request) {
       const strategyPage = await createReportPageFromTemplate({
         templatePageId: strategyTemplateId,
         parentPageId: brandedHomepage.id, // Child of branded homepage
-        title: `Strategy Report - r/${subreddit || 'Unknown'}`,
+        title: `${smartTitle} - Strategy Report`, // Use AI title instead of subreddit
         content: strategyReport,
         reportType: 'strategy',
-        subreddit: subreddit || 'Unknown',
+        subreddit: '', // Not subreddit-specific anymore
       });
       strategyUrl = `https://notion.so/${strategyPage.id.replace(/-/g, '')}`;
       results.childPages.push({
@@ -195,10 +235,10 @@ export async function POST(request: Request) {
       const comprehensivePage = await createReportPageFromTemplate({
         templatePageId: comprehensiveTemplateId,
         parentPageId: brandedHomepage.id, // Child of branded homepage
-        title: `Comprehensive Analysis - r/${subreddit || 'Unknown'}`,
+        title: `${smartTitle} - Comprehensive Analysis`, // Use AI title instead of subreddit
         content: comprehensiveReport,
         reportType: 'comprehensive',
-        subreddit: subreddit || 'Unknown',
+        subreddit: '', // Not subreddit-specific anymore
       });
       comprehensiveUrl = `https://notion.so/${comprehensivePage.id.replace(/-/g, '')}`;
       results.childPages.push({
@@ -208,12 +248,12 @@ export async function POST(request: Request) {
       });
     }
 
-    // --- Build homepage blocks in the correct order, with no duplicates ---
+    // --- Build homepage blocks - Clean AI-generated content only ---
     const homepageBlocks: any[] = [
-      // Title
+      // Title using AI-generated smart title
       {
         type: "heading_1",
-        heading_1: { rich_text: [{ text: { content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}` } }] }
+        heading_1: { rich_text: [{ text: { content: smartTitle } }] }
       },
       // Personalized Greeting
       {
@@ -221,62 +261,23 @@ export async function POST(request: Request) {
         paragraph: { rich_text: [{ text: { content: `Hey ${contactName} and the rest of the ${companyName} team!` } }] }
       },
       { type: "divider", divider: {} },
-      // Report Section
-      {
-        type: "heading_2",
-        heading_2: { rich_text: [{ text: { content: `📊 Report 1: Reddit Analysis for r/${subreddit || 'Unknown'}` } }] }
-      },
-      {
-        type: "paragraph",
-        paragraph: { rich_text: [{ text: { content: `*Target Audience: r/${subreddit || 'Unknown'} community members*` } }] }
-      },
-      {
-        type: "paragraph",
-        paragraph: { rich_text: [{ text: { content: "***Read Your Report by Clicking the Link Below** 👇🏼" } }] }
-      },
-      // Report Links
-      ...(strategyUrl ? [{
-        type: "paragraph",
-        paragraph: { rich_text: [{ text: { content: "Strategy Report", link: { url: strategyUrl } } }] }
-      }] : []),
-      ...(comprehensiveUrl ? [{
-        type: "paragraph",
-        paragraph: { rich_text: [{ text: { content: "Comprehensive Analysis", link: { url: comprehensiveUrl } } }] }
-      }] : []),
-      { type: "divider", divider: {} },
-      // Questions Section
-      {
-        type: "heading_2",
-        heading_2: { rich_text: [{ text: { content: "Questions?" } }] }
-      },
-      {
-        type: "paragraph",
-        paragraph: { rich_text: [{ text: { content: "Email harrison@dododigital.com and I'll get back to you within 48 hours!" } }] }
-      },
-      { type: "divider", divider: {} },
-      // CTA Section
-      ...(clientType === 'demo' || clientType === 'prospect' ? [
-        {
-          type: "heading_2",
-          heading_2: { rich_text: [{ text: { content: "🚀 Want More Insights Like This?" } }] }
-        },
-        {
-          type: "paragraph",
-          paragraph: { rich_text: [{ text: { content: "This is just a taste of what we can do for your marketing campaigns. Get detailed audience intelligence reports for any Reddit community or social platform." } }] }
-        },
-        {
-          type: "paragraph",
-          paragraph: { rich_text: [{ text: { content: "📧 Email harrison@dododigital.com to discuss pricing and get started with regular audience research." } }] }
-        },
-        { type: "divider", divider: {} }
-      ] : []),
-      // LLM-Generated Intro/Summary (if you want it)
+      // AI-Generated Intro/Summary ONLY
       ...(homepageIntro ? [
         {
           type: "paragraph",
           paragraph: { rich_text: [{ text: { content: homepageIntro } }] }
-        }
-      ] : [])
+        },
+        { type: "divider", divider: {} }
+      ] : []),
+      // Report Links
+      ...(strategyUrl ? [{
+        type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: "View Strategy Report", link: { url: strategyUrl } } }] }
+      }] : []),
+      ...(comprehensiveUrl ? [{
+        type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: "View Comprehensive Analysis", link: { url: comprehensiveUrl } } }] }
+      }] : []),
     ];
 
     await notion.blocks.children.append({
@@ -325,7 +326,7 @@ async function createBrandedParentPage({
   metadata?: any;
 }) {
   const currentDate = new Date().toISOString().split('T')[0];
-  const title = `Reddit Opportunity Analysis - r/${subreddit || 'Unknown'} - ${currentDate}`;
+  const title = `Reddit Opportunity Analysis - ${currentDate}`; // Remove subreddit reference
 
   // Get database properties to adapt to existing schema
   const databaseProperties = await getDatabaseProperties(process.env.NOTION_DATABASE_ID!);
@@ -338,8 +339,8 @@ async function createBrandedParentPage({
         Name: {
           title: [{ text: { content: title } }],
         },
-        Subreddit: {
-          rich_text: [{ text: { content: subreddit || 'Unknown' } }],
+        "Analysis Type": {
+          rich_text: [{ text: { content: 'Multi-Platform Research' } }], // Replace Subreddit field
         },
         Email: {
           email: email || null,
@@ -367,7 +368,7 @@ async function createBrandedParentPage({
           rich_text: [
             {
               text: {
-                content: `🎯 Reddit Opportunity Analysis for r/${subreddit || 'Unknown'}`,
+                content: `🎯 Market Research & Audience Intelligence`,
               },
             },
           ],
@@ -379,7 +380,7 @@ async function createBrandedParentPage({
           rich_text: [
             {
               text: {
-                content: `Analysis completed on ${new Date().toLocaleDateString()} • Generated by Reddit Opportunity Engine`,
+                content: `Analysis completed on ${new Date().toLocaleDateString()} • Generated by Dodo Digital Research Engine`,
               },
             },
           ],
@@ -507,7 +508,7 @@ async function createFullReportPage({
          rich_text: [
            {
              text: {
-               content: `Target Audience: r/${subreddit} community members`,
+               content: `Analysis Type: Multi-Platform Audience Research`,
              },
            },
          ],
@@ -1238,6 +1239,12 @@ async function createReportPageFromTemplate({
           ],
         },
       },
+      cover: {
+        type: "external",
+        external: {
+          url: getBannerImageUrl()
+        }
+      },
       children: initialBlocks,
     });
     // Append the rest in batches of 100
@@ -1266,6 +1273,12 @@ async function createReportPageFromTemplate({
             },
           ],
         },
+      },
+      cover: {
+        type: "external",
+        external: {
+          url: getBannerImageUrl()
+        }
       },
       children: initialBlocks,
     });
@@ -1470,7 +1483,7 @@ async function createBrandedHomepageFromTemplate({
           title: [
             {
               text: {
-                content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`,
+                content: `Market Research & Audience Intelligence Reports`,
               },
             },
           ],
@@ -1485,9 +1498,14 @@ async function createBrandedHomepageFromTemplate({
       emoji: "📊"
     };
     
-    // Skip cover copying for now to avoid validation errors
-    // TODO: Fix template cover copying later if needed
-    console.log('Skipping cover copy to avoid validation errors');
+    // Add our custom hosted banner image instead of copying template cover
+    createPageData.cover = {
+      type: "external",
+      external: {
+        url: getBannerImageUrl()
+      }
+    };
+    console.log('Adding custom banner image:', getBannerImageUrl());
 
     // Create the new page with visual branding
     let newPage;
@@ -1578,11 +1596,21 @@ async function createBrandedHomepageFromTemplate({
           title: [
             {
               text: {
-                content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`,
+                content: `Market Research & Audience Intelligence Reports`,
               },
             },
           ],
         },
+      },
+      icon: {
+        type: "emoji",
+        emoji: "📊"
+      },
+      cover: {
+        type: "external",
+        external: {
+          url: getBannerImageUrl()
+        }
       },
       children: [
         {
@@ -1619,7 +1647,7 @@ async function createBrandedHomepageFromTemplate({
             rich_text: [
               {
                 text: {
-                  content: `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`,
+                  content: `Market Research & Audience Intelligence Reports`,
                 },
               },
             ],
@@ -1631,7 +1659,7 @@ async function createBrandedHomepageFromTemplate({
             rich_text: [
               {
                 text: {
-                  content: `Analysis completed on ${new Date().toLocaleDateString()} • Generated by Reddit Opportunity Engine`,
+                  content: `Analysis completed on ${new Date().toLocaleDateString()} • Generated by Dodo Digital Research Engine`,
                 },
               },
             ],
@@ -1677,15 +1705,15 @@ function replacePlaceholders(content: string, subreddit?: string, email?: string
   return content
     .replace(/\{\{Company Name\}\}/g, companyName)
     .replace(/\{\{Contact Name\}\}/g, clientName)
-    .replace(/\{\{Report Name\}\}/g, `Reddit Analysis for r/${subreddit || 'Unknown'}`)
-    .replace(/\{\{Audience\}\}/g, `r/${subreddit || 'Unknown'} community members`)
-    .replace(/{DYNAMIC_TITLE}/g, `Audience Intelligence Reports for r/${subreddit || 'Unknown'}`)
-    .replace(/{SUBREDDIT}/g, subreddit || 'Unknown')
-    .replace(/{CLIENT_EMAIL}/g, email || 'Unknown')
+    .replace(/\{\{Report Name\}\}/g, `Market Research & Audience Intelligence`)
+    .replace(/\{\{Audience\}\}/g, `Multi-platform audience research`)
+    .replace(/{DYNAMIC_TITLE}/g, `Market Research & Audience Intelligence Reports`)
+    .replace(/{SUBREDDIT}/g, 'Multi-Platform')
+    .replace(/{CLIENT_EMAIL}/g, email || 'team@dododigital.com')
     .replace(/{RUN_ID}/g, runId || 'N/A')
     .replace(/{DATE}/g, new Date().toLocaleDateString())
     .replace(/{CLIENT_GREETING}/g, `Hey ${clientName}!`)
-    .replace(/{ANALYSIS_DETAILS}/g, `Reddit community analysis for r/${subreddit || 'Unknown'}`);
+    .replace(/{ANALYSIS_DETAILS}/g, `Comprehensive audience research across multiple platforms`);
 }
 
 function generateCTABlocks(clientType?: 'demo' | 'existing' | 'prospect'): any[] {
@@ -1713,7 +1741,7 @@ function generateCTABlocks(clientType?: 'demo' | 'existing' | 'prospect'): any[]
           rich_text: [
             {
               text: {
-                content: "This is just a taste of what we can do for your marketing campaigns. Get detailed audience intelligence reports for any Reddit community or social platform.",
+                content: "This is just a taste of what we can do for your marketing campaigns. Get detailed audience intelligence reports for any social platform or digital community.",
               },
             },
           ],
@@ -1756,7 +1784,7 @@ function generateCTABlocks(clientType?: 'demo' | 'existing' | 'prospect'): any[]
           rich_text: [
             {
               text: {
-                content: "Hope you found this analysis helpful! If you have any questions about implementing these insights or want to request analysis for another community, just let me know.",
+                content: "Hope you found this analysis helpful! If you have any questions about implementing these insights or want to request analysis for another market segment, just let me know.",
               },
             },
           ],

@@ -28,7 +28,7 @@ export function extractCompanyName(email?: string): string {
   // Split on hyphens/underscores and capitalize words
   return domain
     .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, function (substring: string, ...args: any[]): string { return substring.toUpperCase(); })
+    .replace(/\b\w/g, (c: string): string => c.toUpperCase())
     .replace(/\bAnd\b/i, '&');
 }
 
@@ -47,8 +47,8 @@ export function extractContactName(email?: string): string {
  */
 export function extractReportType(metadata?: any, fallback?: string): string {
   if (metadata?.reportType) return metadata.reportType;
-  if (metadata?.analysisType) return metadata.analysisType.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-  return fallback || 'Reddit Opportunity';
+  if (metadata?.analysisType) return metadata.analysisType.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+  return fallback || 'Market Research';
 }
 
 /**
@@ -113,6 +113,61 @@ export async function getHomepageIntroFromLLM(prompt: string): Promise<string> {
   }
   const data = await response.json();
   return data.choices?.[0]?.message?.content?.trim() || '';
+}
+
+/**
+ * Generate a smart title based on the report content using a cheaper model.
+ */
+export async function generateReportTitleFromLLM({ strategyReport, comprehensiveReport }: {
+  strategyReport: string;
+  comprehensiveReport: string;
+}): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY not set');
+  
+  // Create a prompt to analyze the reports and generate a title
+  const prompt = `Based on the following reports, generate a concise, professional title that captures the main focus/industry/topic being analyzed. The title should be 3-8 words and describe what market/audience/industry is being analyzed.
+
+Examples:
+- "Higher Education Market Analysis"
+- "SaaS Startup Audience Research" 
+- "E-commerce Consumer Insights"
+- "Healthcare Industry Analysis"
+
+Strategy Report:
+${strategyReport.slice(0, 1000)}
+
+Comprehensive Report:
+${comprehensiveReport.slice(0, 1000)}
+
+Generate only the title, nothing else:`;
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'openai/gpt-4o-mini', // Cheaper model as requested
+      messages: [
+        { role: 'system', content: 'You are a marketing analyst that creates concise, professional titles.' },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 50,
+      temperature: 0.3,
+    }),
+  });
+  
+  if (!response.ok) {
+    throw new Error(`OpenRouter API error: ${response.status} ${await response.text()}`);
+  }
+  
+  const data = await response.json();
+  const title = data.choices?.[0]?.message?.content?.trim() || 'Market Research Analysis';
+  
+  // Clean up the title (remove quotes, etc.)
+  return title.replace(/['"]/g, '').trim();
 }
 
 /**
