@@ -17,14 +17,24 @@ import requests
 from subreddit_utils import get_subreddit_info, clear_cache
 from reddit_search import find_subreddits
 
-# Remove import for deleted file
-# from simple_search import find_subreddits
+# Import the enhanced search agent
+try:
+    from enhanced_search_agent import EnhancedSearchAgent
+    ENHANCED_DISCOVERY_AVAILABLE = True
+except ImportError:
+    ENHANCED_DISCOVERY_AVAILABLE = False
 
 # Load environment variables
 load_dotenv()
 
 # Setup console for better output
 console = Console()
+
+# Display enhanced discovery status
+if ENHANCED_DISCOVERY_AVAILABLE:
+    console.print("[green]✓ Enhanced subreddit discovery available[/green]")
+else:
+    console.print("[yellow]⚠️ Enhanced discovery not available, using fallback method[/yellow]")
 
 # Initialize OpenAI client with OpenRouter base URL
 client = OpenAI(
@@ -71,6 +81,9 @@ class SearchAgent:
         self.min_subscriber_threshold = 5000  # Adjusted: Minimum number of subscribers for a subreddit to be useful
         self.max_validations_per_iteration = 15  # Increased: Allow more validations per iteration
         
+        # Enhanced discovery settings
+        self.use_enhanced_discovery = ENHANCED_DISCOVERY_AVAILABLE and self._should_use_enhanced_discovery()
+        
         # Event system for streaming partial results
         self.callbacks = {
             "search_started": [],
@@ -82,8 +95,23 @@ class SearchAgent:
             "iteration_complete": [],
             "thinking_started": [],
             "thinking_complete": [],
-            "search_complete": []
+            "search_complete": [],
+            "enhanced_discovery_started": [],
+            "enhanced_discovery_complete": []
         }
+        
+    def _should_use_enhanced_discovery(self):
+        """
+        Determine if enhanced discovery should be used based on available API keys
+        """
+        required_keys = ['PERPLEXITY_API_KEY', 'FIRECRAWL_API_KEY', 'OPENROUTER_API_KEY']
+        available_keys = [key for key in required_keys if os.getenv(key)]
+        
+        if len(available_keys) >= 2:  # Need at least 2 out of 3 keys
+            return True
+        else:
+            console.print(f"[yellow]Enhanced discovery requires at least 2 API keys. Available: {len(available_keys)}/3[/yellow]")
+            return False
         
     def register_callback(self, event_name, callback_fn):
         """Register a callback function for a specific event."""
@@ -100,6 +128,133 @@ class SearchAgent:
                     callback(data)
                 except Exception as e:
                     console.print(f"[bold red]Error in callback for event '{event_name}': {str(e)}[/bold red]")
+        
+    async def enhanced_subreddit_discovery(self):
+        """
+        Use the enhanced discovery system to find high-quality subreddits
+        """
+        console.print(Panel.fit(
+            "[bold blue]🚀 Using Enhanced AI-Powered Subreddit Discovery[/bold blue]\n\n"
+            "• Perplexity AI for intelligent discovery\n"
+            "• Firecrawl for comprehensive Reddit search\n"
+            "• AI-powered relevance scoring\n"
+            "• Multi-source validation",
+            title="Enhanced Discovery"
+        ))
+        
+        self.trigger_event("enhanced_discovery_started", {
+            "product_type": self.product_type,
+            "problem_area": self.problem_area,
+            "target_audience": self.target_audience
+        })
+        
+        try:
+            # Create enhanced search agent
+            enhanced_agent = EnhancedSearchAgent(
+                product_type=self.product_type,
+                problem_area=self.problem_area,
+                target_audience=self.target_audience,
+                additional_context=self.additional_context
+            )
+            
+            # Run enhanced discovery
+            enhanced_results = await enhanced_agent.discover_subreddits()
+            
+            # Convert enhanced results to our format
+            converted_subreddits = self._convert_enhanced_results(enhanced_results)
+            
+            console.print(f"[green]✓ Enhanced discovery found {len(converted_subreddits)} high-quality subreddits[/green]")
+            
+            self.trigger_event("enhanced_discovery_complete", {
+                "subreddits_found": len(converted_subreddits),
+                "quality_score": self._calculate_enhanced_quality_score(enhanced_results)
+            })
+            
+            return converted_subreddits, enhanced_results
+            
+        except Exception as e:
+            console.print(f"[red]Enhanced discovery failed: {e}[/red]")
+            console.print("[yellow]Falling back to original discovery method[/yellow]")
+            return [], None
+
+    def _convert_enhanced_results(self, enhanced_results):
+        """
+        Convert enhanced discovery results to the format expected by the rest of the system
+        """
+        converted_subreddits = []
+        
+        # Process validated subreddits from enhanced discovery
+        for subreddit in enhanced_results.get('validated_subreddits', []):
+            # Find the recommendation data for this subreddit
+            recommendation = self._find_recommendation_for_subreddit(
+                subreddit['name'], 
+                enhanced_results.get('final_recommendations', {})
+            )
+            
+            converted_sub = {
+                "name": f"r/{subreddit['name']}",
+                "title": subreddit.get('description', '')[:100] + "..." if len(subreddit.get('description', '')) > 100 else subreddit.get('description', ''),
+                "subscribers": subreddit.get('subscribers', 0),
+                "description": subreddit.get('description', ''),
+                "url": f"https://reddit.com/r/{subreddit['name']}",
+                "created_utc": 0,  # Not available from enhanced discovery
+                "over18": subreddit.get('over_18', False),
+                "active_users": 0,  # Not available from enhanced discovery
+                "is_niche": subreddit.get('subscribers', 0) < self.niche_threshold,
+                "selection_reason": recommendation.get('relevance_reason', 'Found via enhanced AI discovery') if recommendation else 'Found via enhanced AI discovery',
+                "relevance_score": recommendation.get('relevance_score', 7) if recommendation else 7,
+                "engagement_approach": recommendation.get('engagement_approach', 'Research community guidelines and engage authentically') if recommendation else 'Research community guidelines and engage authentically',
+                "discovery_method": "enhanced_ai",
+                "category": recommendation.get('category', 'secondary') if recommendation else 'secondary'
+            }
+            
+            converted_subreddits.append(converted_sub)
+            
+            # Add to found subreddits set
+            self.found_subreddits.add(converted_sub["name"])
+            
+            # Store reasoning
+            self.subreddit_reasons[converted_sub["name"]] = converted_sub["selection_reason"]
+            
+            self.trigger_event("subreddit_found", {
+                "subreddit": converted_sub["name"], 
+                "source": "enhanced_discovery",
+                "relevance_score": converted_sub["relevance_score"]
+            })
+        
+        return converted_subreddits
+
+    def _find_recommendation_for_subreddit(self, subreddit_name, recommendations):
+        """
+        Find the recommendation data for a specific subreddit
+        """
+        for category in ['primary', 'secondary', 'niche']:
+            for rec in recommendations.get(category, []):
+                if rec['name'] == subreddit_name:
+                    rec['category'] = category
+                    return rec
+        return None
+
+    def _calculate_enhanced_quality_score(self, enhanced_results):
+        """
+        Calculate a quality score for enhanced discovery results
+        """
+        score = 0
+        
+        # Points for number of validated subreddits
+        validated_count = len(enhanced_results.get('validated_subreddits', []))
+        score += min(validated_count * 5, 50)
+        
+        # Points for having recommendations in different categories
+        recommendations = enhanced_results.get('final_recommendations', {})
+        if recommendations.get('primary'):
+            score += 30
+        if recommendations.get('secondary'):
+            score += 15
+        if recommendations.get('niche'):
+            score += 5
+        
+        return min(score, 100)
         
     async def search_web(self, query, max_results=5, max_retries=3):
         """Search using our direct Reddit JSON API method instead of DuckDuckGo."""
@@ -855,7 +1010,38 @@ Your response should be a valid JSON object with this structure:
             "additional_context": self.additional_context
         })
         
-        sufficient_results = False
+        # Try enhanced discovery first if available
+        enhanced_subreddits = []
+        enhanced_results = None
+        
+        if self.use_enhanced_discovery:
+            try:
+                enhanced_subreddits, enhanced_results = await self.enhanced_subreddit_discovery()
+                
+                if enhanced_subreddits:
+                    console.print(f"[green]✓ Enhanced discovery successful! Found {len(enhanced_subreddits)} high-quality subreddits[/green]")
+                    
+                    # Add enhanced results to validated subreddits
+                    self.validated_subreddits.extend(enhanced_subreddits)
+                    
+                    # Check if enhanced discovery provided sufficient results
+                    if len(enhanced_subreddits) >= 6:
+                        console.print("[green]✓ Enhanced discovery found sufficient subreddits, skipping traditional search[/green]")
+                        sufficient_results = True
+                    else:
+                        console.print(f"[yellow]Enhanced discovery found {len(enhanced_subreddits)} subreddits, running traditional search for more[/yellow]")
+                        sufficient_results = False
+                else:
+                    console.print("[yellow]Enhanced discovery returned no results, falling back to traditional search[/yellow]")
+                    sufficient_results = False
+                    
+            except Exception as e:
+                console.print(f"[red]Enhanced discovery failed: {e}[/red]")
+                console.print("[yellow]Falling back to traditional search method[/yellow]")
+                sufficient_results = False
+        else:
+            console.print("[yellow]Enhanced discovery not available, using traditional search[/yellow]")
+            sufficient_results = False
         
         while not sufficient_results and self.search_iterations < self.max_iterations:
             console.print(f"\n[bold cyan]===== ITERATION {self.search_iterations + 1} =====[/bold cyan]")
@@ -1003,19 +1189,39 @@ Your response should be a valid JSON object with this structure:
         console.print(f"\n[bold green]===== SEARCH COMPLETE ({self.search_iterations} iterations) =====[/bold green]")
         console.print(f"[bold green]Found {len(self.validated_subreddits)} validated subreddits[/bold green]")
         
-        # Categorize subreddits by size
+        # Categorize subreddits by size and enhanced discovery categories
         large_subreddits = []
         medium_subreddits = []
         niche_subreddits = []
         
         for sub in self.validated_subreddits:
             sub_count = sub.get('subscribers', 0)
-            if sub_count >= 1000000:  # Over 1M
-                large_subreddits.append(sub)
-            elif sub_count >= self.niche_threshold:  # Over threshold but under 1M
-                medium_subreddits.append(sub)
-            else:  # Under threshold
-                niche_subreddits.append(sub)
+            
+            # Use enhanced discovery category if available, otherwise use size-based categorization
+            if sub.get('discovery_method') == 'enhanced_ai' and sub.get('category'):
+                enhanced_category = sub.get('category')
+                if enhanced_category == 'primary':
+                    large_subreddits.append(sub)
+                elif enhanced_category == 'secondary':
+                    medium_subreddits.append(sub)
+                elif enhanced_category == 'niche':
+                    niche_subreddits.append(sub)
+                else:
+                    # Fallback to size-based categorization
+                    if sub_count >= 1000000:  # Over 1M
+                        large_subreddits.append(sub)
+                    elif sub_count >= self.niche_threshold:  # Over threshold but under 1M
+                        medium_subreddits.append(sub)
+                    else:  # Under threshold
+                        niche_subreddits.append(sub)
+            else:
+                # Traditional size-based categorization
+                if sub_count >= 1000000:  # Over 1M
+                    large_subreddits.append(sub)
+                elif sub_count >= self.niche_threshold:  # Over threshold but under 1M
+                    medium_subreddits.append(sub)
+                else:  # Under threshold
+                    niche_subreddits.append(sub)
                 
         # Sort each category by subscriber count
         large_subreddits.sort(key=lambda x: x.get('subscribers', 0), reverse=True)
@@ -1030,39 +1236,46 @@ Your response should be a valid JSON object with this structure:
         table.add_column("Subreddit", style="cyan")
         table.add_column("Subscribers", justify="right")
         table.add_column("Category", style="yellow")
+        table.add_column("Source", style="green")
         table.add_column("Description")
         
         # Add large subreddits
         if large_subreddits:
-            console.print(f"\n[bold yellow]LARGE COMMUNITIES ({len(large_subreddits)})[/bold yellow]")
+            console.print(f"\n[bold yellow]PRIMARY COMMUNITIES ({len(large_subreddits)})[/bold yellow]")
             for sub in large_subreddits:
+                source = "Enhanced AI" if sub.get('discovery_method') == 'enhanced_ai' else "Traditional"
                 table.add_row(
-                    sub['subreddit_name'],
+                    sub.get('subreddit_name', sub.get('name', '')),
                     f"{sub.get('subscribers', 0):,}",
-                    "Large",
-                    sub.get('title', 'No title')[:60] + ('...' if len(sub.get('title', '')) > 60 else '')
+                    "Primary",
+                    source,
+                    sub.get('title', sub.get('description', 'No description'))[:50] + ('...' if len(sub.get('title', sub.get('description', ''))) > 50 else '')
                 )
                 
         # Add medium subreddits
         if medium_subreddits:
-            console.print(f"\n[bold green]MEDIUM COMMUNITIES ({len(medium_subreddits)})[/bold green]")
+            console.print(f"\n[bold green]SECONDARY COMMUNITIES ({len(medium_subreddits)})[/bold green]")
             for sub in medium_subreddits:
+                source = "Enhanced AI" if sub.get('discovery_method') == 'enhanced_ai' else "Traditional"
                 table.add_row(
-                    sub['subreddit_name'],
+                    sub.get('subreddit_name', sub.get('name', '')),
                     f"{sub.get('subscribers', 0):,}",
-                    "Medium",
-                    sub.get('title', 'No title')[:60] + ('...' if len(sub.get('title', '')) > 60 else '')
+                    "Secondary",
+                    source,
+                    sub.get('title', sub.get('description', 'No description'))[:50] + ('...' if len(sub.get('title', sub.get('description', ''))) > 50 else '')
                 )
                 
         # Add niche subreddits
         if niche_subreddits:
             console.print(f"\n[bold cyan]NICHE COMMUNITIES ({len(niche_subreddits)})[/bold cyan]")
             for sub in niche_subreddits:
+                source = "Enhanced AI" if sub.get('discovery_method') == 'enhanced_ai' else "Traditional"
                 table.add_row(
-                    sub['subreddit_name'],
+                    sub.get('subreddit_name', sub.get('name', '')),
                     f"{sub.get('subscribers', 0):,}",
                     "Niche",
-                    sub.get('title', 'No title')[:60] + ('...' if len(sub.get('title', '')) > 60 else '')
+                    source,
+                    sub.get('title', sub.get('description', 'No description'))[:50] + ('...' if len(sub.get('title', sub.get('description', ''))) > 50 else '')
                 )
         
         # Display the table
@@ -1124,17 +1337,40 @@ Your response should be a valid JSON object with this structure:
         
     def _format_subreddit_for_output(self, subreddit_data):
         """Format subreddit data for output, with cleaner structure"""
-        return {
-            "name": subreddit_data.get('subreddit_name', ''),
-            "title": subreddit_data.get('title', ''),
+        # Handle both traditional and enhanced discovery formats
+        name = subreddit_data.get('subreddit_name') or subreddit_data.get('name', '')
+        title = subreddit_data.get('title') or subreddit_data.get('description', '')
+        description = subreddit_data.get('public_description') or subreddit_data.get('description', '')
+        
+        formatted = {
+            "name": name,
+            "title": title,
             "subscribers": subreddit_data.get('subscribers', 0),
-            "description": subreddit_data.get('public_description', ''),
+            "description": description,
             "url": subreddit_data.get('url', ''),
             "created_utc": subreddit_data.get('created_utc', 0),
             "is_niche": subreddit_data.get('subscribers', 0) < self.niche_threshold,
             "active_users": subreddit_data.get('active_user_count', 0),
             "selection_reason": subreddit_data.get('selection_reason', "Relevant community for market research")
         }
+        
+        # Add enhanced discovery specific fields if available
+        if subreddit_data.get('discovery_method') == 'enhanced_ai':
+            formatted.update({
+                "discovery_method": "enhanced_ai",
+                "relevance_score": subreddit_data.get('relevance_score', 7),
+                "engagement_approach": subreddit_data.get('engagement_approach', ''),
+                "category": subreddit_data.get('category', 'secondary')
+            })
+        else:
+            formatted.update({
+                "discovery_method": "traditional",
+                "relevance_score": 5,  # Default score for traditional discovery
+                "engagement_approach": "Research community guidelines and engage authentically",
+                "category": "traditional"
+            })
+            
+        return formatted
 
 # Simple example of how to use this agent
 if __name__ == "__main__":
