@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Subtext MVP Flow
+Subtext MVP Flow - Enhanced Version
 --------------
-An interactive flow for the Subtext MVP mode, which focuses on finding subreddits
-to answer a question or achieve a goal, rather than validating a product directly.
+An interactive flow for the Subtext MVP mode using enhanced AI discovery
+for superior subreddit finding capabilities.
 """
 
 import os
@@ -13,10 +13,19 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.markdown import Markdown
 
-from search_agent import SearchAgent
-from subreddit_selection import select_subreddits_for_analysis
+# Import enhanced discovery instead of old search agent
+try:
+    from enhanced_search_agent import EnhancedSearchAgent
+    ENHANCED_AVAILABLE = True
+    console = Console()
+    console.print("[green]✅ Enhanced AI Discovery Available[/green]")
+except ImportError:
+    from search_agent import SearchAgent
+    ENHANCED_AVAILABLE = False
+    console = Console()
+    console.print("[yellow]⚠️ Enhanced discovery not available, using fallback[/yellow]")
 
-console = Console()
+from subreddit_selection import select_subreddits_for_analysis
 
 async def main():
     # Welcome message
@@ -70,6 +79,7 @@ async def main():
     
     console.print(Panel.fit(
         "[bold]Starting subreddit discovery - this may take a few minutes![/bold]\n\n"
+        f"Using: {'🚀 Enhanced AI Discovery (o3/Claude 3.5/Perplexity)' if ENHANCED_AVAILABLE else '📊 Traditional Discovery (Fallback)'}\n\n"
         "We'll search Reddit communities to find the best ones to help answer your question or achieve your goal."
     ))
     
@@ -79,17 +89,73 @@ async def main():
     original_saved_item_id = os.environ.get("GUMLOOP_SAVED_ITEM_ID", "")
     os.environ["GUMLOOP_SAVED_ITEM_ID"] = "96YEbP1uWuEtBKNsiraxN7"
     
-    # Initialize and run the search agent with the question/goal as additional_context
-    # This ensures compatibility with the existing search agent structure
-    agent = SearchAgent(
-        product_type=product_type,
-        problem_area=problem_area,
-        target_audience=target_audience,
-        additional_context=question_goal
-    )
-    
-    try:
+    # Use enhanced discovery if available, fallback to traditional
+    if ENHANCED_AVAILABLE:
+        console.print("[cyan]🤖 Using Enhanced AI Discovery...[/cyan]")
+        
+        # Initialize enhanced search agent
+        agent = EnhancedSearchAgent(
+            product_type=product_type,
+            problem_area=problem_area,
+            target_audience=target_audience,
+            additional_context=question_goal
+        )
+        
+        try:
+            # Run enhanced discovery
+            enhanced_results = await agent.discover_subreddits()
+            
+            # Display results in a nice format
+            agent.display_results(enhanced_results)
+            
+            console.print(f"\n[bold green]✅ Enhanced discovery found {len(enhanced_results['validated_subreddits'])} validated subreddits![/bold green]")
+            
+            # Convert enhanced results to format expected by subreddit_selection
+            validated_subreddits = []
+            for sub in enhanced_results['validated_subreddits']:
+                validated_subreddits.append({
+                    'subreddit_name': sub['name'],
+                    'subscribers': sub['subscribers'],
+                    'description': sub['description'],
+                    'is_active': sub['is_active'],
+                    'over_18': sub['over_18']
+                })
+            
+            # Run subreddit selection process
+            if validated_subreddits:
+                console.print("\n[cyan]📋 Proceeding to subreddit selection...[/cyan]")
+                await select_subreddits_for_analysis(validated_subreddits)
+            else:
+                console.print("[yellow]⚠️ No subreddits found. Try adjusting your parameters.[/yellow]")
+                
+        except Exception as e:
+            console.print(f"[red]❌ Enhanced discovery failed: {e}[/red]")
+            console.print("[yellow]🔄 Falling back to traditional search...[/yellow]")
+            
+            # Fallback to traditional search agent
+            agent = SearchAgent(
+                product_type=product_type,
+                problem_area=problem_area,
+                target_audience=target_audience,
+                additional_context=question_goal
+            )
+            result = await agent.run()
+    else:
+        console.print("[yellow]📊 Using Traditional Discovery Method...[/yellow]")
+        
+        # Initialize and run the traditional search agent
+        agent = SearchAgent(
+            product_type=product_type,
+            problem_area=problem_area,
+            target_audience=target_audience,
+            additional_context=question_goal
+        )
+        
         result = await agent.run()
+    
+    # End of MVP flow - clean up environment
+    try:
+        pass  # Main logic completed above
     finally:
         # Restore the original environment variable if it existed
         if original_saved_item_id:

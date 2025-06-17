@@ -21,6 +21,16 @@ load_dotenv()
 # Setup console for better output
 console = Console()
 
+# Try to import MCP tools for enhanced functionality
+try:
+    # These would be imported if MCP tools are available
+    # For now, we'll use direct API calls as fallback
+    MCP_AVAILABLE = False
+    console.print("[yellow]ℹ️ MCP tools not available, using direct API calls[/yellow]")
+except ImportError:
+    MCP_AVAILABLE = False
+    console.print("[yellow]ℹ️ MCP tools not available, using direct API calls[/yellow]")
+
 # Initialize OpenAI client with OpenRouter base URL
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -37,11 +47,44 @@ class EnhancedSearchAgent:
         self.perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
         self.firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
         
+        # Model configuration with fallbacks
+        self.analysis_models = [
+            "openai/o3",  # Latest o3 for complex analysis
+            "openai/o4-mini",  # Fast and cost-effective
+            "anthropic/claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet latest
+            "openai/gpt-4-turbo",  # Fallback to GPT-4 Turbo
+        ]
+        
         # Validate API keys
         if not self.perplexity_api_key:
             console.print("[red]Warning: PERPLEXITY_API_KEY not found. Perplexity search will be disabled.[/red]")
         if not self.firecrawl_api_key:
             console.print("[red]Warning: FIRECRAWL_API_KEY not found. Firecrawl search will be disabled.[/red]")
+        
+        console.print(f"[cyan]🤖 Enhanced AI Models: {', '.join(self.analysis_models[:2])}[/cyan]")
+
+    async def _make_ai_call_with_fallback(self, messages, max_tokens=3000, temperature=0.2):
+        """
+        Make an AI call with model fallback logic
+        """
+        for i, model in enumerate(self.analysis_models):
+            try:
+                console.print(f"[dim]Trying {model}...[/dim]")
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                console.print(f"[green]✓ Success with {model}[/green]")
+                return response.choices[0].message.content
+            except Exception as e:
+                console.print(f"[yellow]⚠️ {model} failed: {str(e)[:100]}...[/yellow]")
+                if i == len(self.analysis_models) - 1:
+                    raise Exception(f"All AI models failed. Last error: {e}")
+                continue
+        
+        raise Exception("No AI models available")
 
     async def discover_subreddits(self) -> Dict[str, Any]:
         """
@@ -129,19 +172,19 @@ class EnhancedSearchAgent:
         url = "https://api.perplexity.ai/chat/completions"
         
         payload = {
-            "model": "llama-3.1-sonar-small-128k-online",
+            "model": "llama-3.1-sonar-large-128k-online",  # Upgraded to large model
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a Reddit expert. When asked about subreddits, provide specific subreddit names (with r/ prefix) and brief explanations of why they're relevant. Focus on active communities with engaged users."
+                    "content": "You are a Reddit expert specializing in community discovery and analysis. When asked about subreddits, provide specific subreddit names (with r/ prefix) and detailed explanations of why they're relevant. Focus on active communities with engaged users and provide context about community culture and engagement patterns."
                 },
                 {
                     "role": "user",
-                    "content": f"{query}\n\nPlease provide specific subreddit names (with r/ prefix) and explain why each is relevant. Focus on communities that are active and have engaged discussions about these topics."
+                    "content": f"{query}\n\nPlease provide specific subreddit names (with r/ prefix) and explain why each is relevant. Focus on communities that are active and have engaged discussions about these topics. Include insights about community size, engagement level, and posting patterns where possible."
                 }
             ],
-            "max_tokens": 1000,
-            "temperature": 0.2,
+            "max_tokens": 1500,  # Increased for more detailed responses
+            "temperature": 0.1,  # More focused responses
             "top_p": 0.9,
             "return_citations": True,
             "search_domain_filter": ["reddit.com"],
@@ -204,15 +247,28 @@ class EnhancedSearchAgent:
     async def _search_with_firecrawl(self, query: str) -> List[Dict[str, Any]]:
         """
         Search using Firecrawl and extract subreddit information
+        Enhanced with better search strategies and MCP compatibility
         """
-        url = "https://api.firecrawl.dev/v0/search"
+        # Try MCP tool first if available
+        if MCP_AVAILABLE:
+            try:
+                return await self._search_with_firecrawl_mcp(query)
+            except Exception as e:
+                console.print(f"[yellow]MCP search failed, falling back to API: {e}[/yellow]")
+        
+        # Fallback to direct API calls
+        url = "https://api.firecrawl.dev/v1/search"  # Updated to v1 API
         
         payload = {
             "query": query,
             "pageOptions": {
-                "onlyMainContent": True
+                "onlyMainContent": True,
+                "includeHtml": False
             },
-            "limit": 5
+            "limit": 8,  # Increased limit for better coverage
+            "location": {
+                "country": "us"
+            }
         }
         
         headers = {
@@ -230,7 +286,7 @@ class EnhancedSearchAgent:
                         # Extract subreddits from URLs and content
                         url_subreddits = self._extract_subreddits_from_url(result.get("url", ""))
                         content_subreddits = self._extract_subreddits_from_text(
-                            result.get("markdown", ""), 
+                            result.get("markdown", "") or result.get("content", ""), 
                             source="firecrawl"
                         )
                         
@@ -239,8 +295,17 @@ class EnhancedSearchAgent:
                     
                     return subreddits
                 else:
-                    console.print(f"[red]Firecrawl API error: {response.status}[/red]")
+                    error_data = await response.text()
+                    console.print(f"[red]Firecrawl API error {response.status}: {error_data[:200]}...[/red]")
                     return []
+
+    async def _search_with_firecrawl_mcp(self, query: str) -> List[Dict[str, Any]]:
+        """
+        Use MCP Firecrawl tool for search (placeholder for future implementation)
+        """
+        # This would use the MCP firecrawl_search tool when available
+        # For now, raise an exception to fall back to API
+        raise NotImplementedError("MCP Firecrawl integration not yet implemented")
 
     def _extract_subreddits_from_url(self, url: str) -> List[Dict[str, Any]]:
         """
@@ -389,28 +454,21 @@ class EnhancedSearchAgent:
         """
         
         try:
-            response = client.chat.completions.create(
-                model="anthropic/claude-3.5-sonnet",
-                messages=[
-                    {"role": "system", "content": "You are a Reddit marketing expert. Analyze subreddits for marketing relevance and provide strategic recommendations."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=2000,
-                temperature=0.3
-            )
-            
-            content = response.choices[0].message.content
+            response = await self._make_ai_call_with_fallback([
+                {"role": "system", "content": "You are a Reddit marketing expert with deep knowledge of community dynamics, engagement patterns, and strategic marketing approaches. Analyze subreddits for marketing relevance and provide detailed strategic recommendations based on community culture, moderation style, and audience behavior."},
+                {"role": "user", "content": prompt}
+            ])
             
             # Try to parse JSON from the response
             try:
                 # Extract JSON from the response (it might be wrapped in markdown)
-                json_match = re.search(r'```json\n(.*?)\n```', content, re.DOTALL)
+                json_match = re.search(r'```json\n(.*?)\n```', response, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(1)
                 else:
                     # Try to find JSON without markdown wrapper
-                    json_match = re.search(r'\{.*\}', content, re.DOTALL)
-                    json_str = json_match.group(0) if json_match else content
+                    json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                    json_str = json_match.group(0) if json_match else response
                 
                 recommendations = json.loads(json_str)
                 return recommendations
@@ -460,9 +518,18 @@ class EnhancedSearchAgent:
         perplexity_count = len(results["perplexity_subreddits"])
         firecrawl_count = len(results["firecrawl_subreddits"])
         
-        primary_count = len(results["final_recommendations"].get("primary", []))
-        secondary_count = len(results["final_recommendations"].get("secondary", []))
-        niche_count = len(results["final_recommendations"].get("niche", []))
+        # Handle case where final_recommendations might be a list instead of dict
+        final_recommendations = results.get("final_recommendations", {})
+        if isinstance(final_recommendations, list):
+            # If it's a list, create empty categories
+            primary_count = 0
+            secondary_count = 0
+            niche_count = 0
+        else:
+            # If it's a dict, get the counts as expected
+            primary_count = len(final_recommendations.get("primary", []))
+            secondary_count = len(final_recommendations.get("secondary", []))
+            niche_count = len(final_recommendations.get("niche", []))
         
         summary = f"""
 Enhanced Subreddit Discovery Summary:

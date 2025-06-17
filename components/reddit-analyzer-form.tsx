@@ -38,6 +38,7 @@ export function RedditAnalyzerForm() {
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [pipelineId, setPipelineId] = useState<string | undefined>()
   const [runId, setRunId] = useState<string | undefined>()
+  const [useEnhancedDiscovery, setUseEnhancedDiscovery] = useState(true)
   const { toast } = useToast()
   const formRef = useRef<HTMLDivElement>(null)
   const subredditInputRef = useRef<HTMLInputElement>(null)
@@ -161,40 +162,62 @@ export function RedditAnalyzerForm() {
     setIsSubmitting(true)
 
     try {
-      const response = await fetch('/api/start-pipeline', {
+      let apiEndpoint = '/api/start-pipeline'
+      let requestBody: any = {
+        subreddit,
+        focus,
+        email,
+        postLimit
+      }
+
+      // Use enhanced discovery if enabled
+      if (useEnhancedDiscovery) {
+        apiEndpoint = '/api/enhanced-subreddit-discovery'
+        requestBody = {
+          product_type: focus || 'General market research',
+          problem_area: `Understanding discussions in r/${subreddit}`,
+          target_audience: 'Reddit community members',
+          additional_context: `Analyzing ${postLimit} posts from r/${subreddit} for ${email}`
+        }
+      }
+
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          subreddit,
-          focus,
-          email,
-          postLimit
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
         const responseData = await response.json();
         
-        // Store the runId if available
-        if (responseData.run_id) {
-          setRunId(responseData.run_id);
+        if (useEnhancedDiscovery) {
+          // Handle enhanced discovery response
+          toast({
+            title: "Enhanced Discovery Complete!",
+            description: `Found ${responseData.summary?.total_subreddits || 0} relevant subreddits using AI-powered discovery.`,
+          });
+          
+          // You can handle the enhanced results here
+          console.log('Enhanced Discovery Results:', responseData);
+        } else {
+          // Handle traditional pipeline response
+          if (responseData.run_id) {
+            setRunId(responseData.run_id);
+          }
+          
+          if (responseData.saved_item_id) {
+            setPipelineId(responseData.saved_item_id);
+          }
+          
+          setSubmittedValues({
+            subreddit,
+            email
+          });
+          
+          setShowSuccessDialog(true);
         }
-        
-        // Store the saved_item_id if available (as pipelineId)
-        if (responseData.saved_item_id) {
-          setPipelineId(responseData.saved_item_id);
-        }
-        
-        // Store submitted values for the success dialog
-        setSubmittedValues({
-          subreddit,
-          email
-        });
-        
-        // Show success dialog
-        setShowSuccessDialog(true);
       } else {
         const errorData = await response.json();
         toast({
@@ -329,6 +352,41 @@ export function RedditAnalyzerForm() {
               placeholder="75"
             />
             <p className="text-xs text-gray-600">Higher values provide more data but may take longer to process.</p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="enhancedDiscovery" className="block text-base font-bold text-black">
+                Enhanced AI Discovery <span className="text-green-600 text-sm">(Recommended)</span>
+              </label>
+              <div className="relative inline-block w-12 h-6">
+                <input
+                  id="enhancedDiscovery"
+                  type="checkbox"
+                  checked={useEnhancedDiscovery}
+                  onChange={(e) => setUseEnhancedDiscovery(e.target.checked)}
+                  className="sr-only"
+                />
+                <div
+                  className={`block w-12 h-6 rounded-full border-2 border-black cursor-pointer transition-all ${
+                    useEnhancedDiscovery ? 'bg-green-500' : 'bg-gray-300'
+                  }`}
+                  onClick={() => setUseEnhancedDiscovery(!useEnhancedDiscovery)}
+                >
+                  <div
+                    className={`w-4 h-4 bg-white border border-black rounded-full shadow-md transform transition-transform ${
+                      useEnhancedDiscovery ? 'translate-x-6' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-gray-600">
+              {useEnhancedDiscovery 
+                ? "🤖 AI-powered discovery finds multiple relevant subreddits using Claude 3.5 Sonnet + Perplexity AI"
+                : "📊 Basic analysis of the specified subreddit only (legacy mode)"
+              }
+            </p>
           </div>
 
           <div className="pt-4">
