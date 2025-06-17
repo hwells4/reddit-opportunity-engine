@@ -1,7 +1,7 @@
 # 🚀 Enhanced Reddit Discovery Agent
 
 **Status: ✅ PRODUCTION READY**  
-**Latest Update: Model upgrades to o3/o4-mini and Claude 3.5 Sonnet**
+**Latest Update: Model upgrades to o3/o4-mini and Claude 4 Sonnet**
 
 ## 🎯 **What This Does**
 
@@ -10,8 +10,9 @@ The Enhanced Reddit Discovery Agent uses multiple AI models and data sources to 
 ### **🔥 Key Advantages Over Traditional Discovery:**
 
 1. **🧠 Multi-AI Intelligence**:
-   - **OpenAI o3/o4-mini**: Latest reasoning models for complex analysis
-   - **Claude 3.5 Sonnet**: Advanced subreddit categorization and recommendations
+   - **OpenAI o3**: Latest reasoning model for complex analysis
+   - **Claude 4 Sonnet**: State-of-the-art subreddit categorization and recommendations
+   - **OpenAI o4-mini**: Fast and cost-effective processing
    - **Perplexity AI**: Real-time Reddit community research
    - **Firecrawl**: Comprehensive Reddit content search
 

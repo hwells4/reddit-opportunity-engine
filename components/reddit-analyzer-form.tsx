@@ -383,7 +383,7 @@ export function RedditAnalyzerForm() {
             </div>
             <p className="text-xs text-gray-600">
               {useEnhancedDiscovery 
-                ? "🤖 AI-powered discovery finds multiple relevant subreddits using Claude 3.5 Sonnet + Perplexity AI"
+                ? "🤖 AI-powered discovery finds multiple relevant subreddits using Claude 4 Sonnet + OpenAI o3 + Perplexity AI"
                 : "📊 Basic analysis of the specified subreddit only (legacy mode)"
               }
             </p>

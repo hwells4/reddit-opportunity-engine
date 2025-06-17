@@ -15,7 +15,7 @@ fi
 # Start enhanced service in background if not already running
 if ! curl -s http://localhost:5001/enhanced-discover/health > /dev/null; then
     echo "🔧 Starting enhanced discovery service..."
-    python enhanced_api.py &
+    python3 enhanced_api.py &
     ENHANCED_PID=$!
     echo "Enhanced service started with PID: $ENHANCED_PID"
     
@@ -40,7 +40,7 @@ fi
 
 # Run MVP flow
 echo "🎯 Starting MVP flow with enhanced discovery..."
-python mvp_flow.py
+python3 mvp_flow.py
 
 # Clean up if we started the service
 if [ ! -z "$ENHANCED_PID" ]; then

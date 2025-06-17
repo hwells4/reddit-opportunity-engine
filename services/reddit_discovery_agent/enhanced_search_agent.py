@@ -49,10 +49,11 @@ class EnhancedSearchAgent:
         
         # Model configuration with fallbacks
         self.analysis_models = [
-            "openai/o3",  # Latest o3 for complex analysis
-            "openai/o4-mini",  # Fast and cost-effective
-            "anthropic/claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet latest
-            "openai/gpt-4-turbo",  # Fallback to GPT-4 Turbo
+            "anthropic/claude-3-5-sonnet",  # Claude 3.5 Sonnet - reliable and powerful
+            "openai/gpt-4-turbo",  # GPT-4 Turbo - good fallback
+            "openai/gpt-4o-mini",  # Fast and cost-effective
+            "anthropic/claude-3-haiku",  # Lightweight fallback
+            "openai/gpt-3.5-turbo",  # Final fallback
         ]
         
         # Validate API keys
@@ -61,7 +62,7 @@ class EnhancedSearchAgent:
         if not self.firecrawl_api_key:
             console.print("[red]Warning: FIRECRAWL_API_KEY not found. Firecrawl search will be disabled.[/red]")
         
-        console.print(f"[cyan]🤖 Enhanced AI Models: {', '.join(self.analysis_models[:2])}[/cyan]")
+        console.print(f"[cyan]🤖 Enhanced AI Models: Claude 3.5 Sonnet, GPT-4 Turbo, GPT-4o Mini[/cyan]")
 
     async def _make_ai_call_with_fallback(self, messages, max_tokens=3000, temperature=0.2):
         """
@@ -110,15 +111,33 @@ class EnhancedSearchAgent:
         
         # 1. Use Perplexity for intelligent subreddit discovery
         if self.perplexity_api_key:
-            perplexity_results = await self._discover_with_perplexity()
-            discovery_results["perplexity_subreddits"] = perplexity_results
-            all_subreddits.update([r["name"] for r in perplexity_results])
+            try:
+                perplexity_results = await self._discover_with_perplexity()
+                discovery_results["perplexity_subreddits"] = perplexity_results
+                all_subreddits.update([r["name"] for r in perplexity_results])
+            except Exception as e:
+                console.print(f"[red]Perplexity discovery failed: {e}[/red]")
+                discovery_results["perplexity_subreddits"] = []
+        else:
+            console.print("[yellow]Skipping Perplexity discovery - no API key[/yellow]")
         
         # 2. Use Firecrawl to search Reddit for relevant discussions
         if self.firecrawl_api_key:
-            firecrawl_results = await self._discover_with_firecrawl()
-            discovery_results["firecrawl_subreddits"] = firecrawl_results
-            all_subreddits.update([r["name"] for r in firecrawl_results])
+            try:
+                firecrawl_results = await self._discover_with_firecrawl()
+                discovery_results["firecrawl_subreddits"] = firecrawl_results
+                all_subreddits.update([r["name"] for r in firecrawl_results])
+            except Exception as e:
+                console.print(f"[red]Firecrawl discovery failed: {e}[/red]")
+                discovery_results["firecrawl_subreddits"] = []
+        else:
+            console.print("[yellow]Skipping Firecrawl discovery - no API key[/yellow]")
+        
+        # If no external services worked, provide fallback subreddits
+        if not all_subreddits:
+            console.print("[yellow]No subreddits found via external services, using fallback recommendations[/yellow]")
+            fallback_subreddits = self._get_fallback_subreddits()
+            all_subreddits.update(fallback_subreddits)
         
         # 3. Validate and enrich subreddit information
         validated_subreddits = await self._validate_subreddits(list(all_subreddits))
@@ -149,13 +168,15 @@ class EnhancedSearchAgent:
         
         all_subreddits = []
         
-        for query in queries:
+        for i, query in enumerate(queries, 1):
             try:
+                console.print(f"[dim]🔍 Perplexity query {i}/{len(queries)}: {query[:80]}...[/dim]")
                 subreddits = await self._query_perplexity(query)
+                console.print(f"[green]✓ Found {len(subreddits)} subreddits from query {i}[/green]")
                 all_subreddits.extend(subreddits)
                 await asyncio.sleep(1)  # Rate limiting
             except Exception as e:
-                console.print(f"[red]Error with Perplexity query: {e}[/red]")
+                console.print(f"[red]Error with Perplexity query {i}: {e}[/red]")
         
         # Deduplicate and return
         unique_subreddits = {}
@@ -202,14 +223,16 @@ class EnhancedSearchAgent:
             "Content-Type": "application/json"
         }
         
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=60)  # 60 second timeout
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, json=payload, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
                     content = data["choices"][0]["message"]["content"]
                     return self._extract_subreddits_from_text(content, source="perplexity")
                 else:
-                    console.print(f"[red]Perplexity API error: {response.status}[/red]")
+                    error_text = await response.text()
+                    console.print(f"[red]Perplexity API error {response.status}: {error_text[:200]}...[/red]")
                     return []
 
     async def _discover_with_firecrawl(self) -> List[Dict[str, Any]]:
@@ -228,13 +251,15 @@ class EnhancedSearchAgent:
         
         all_subreddits = []
         
-        for query in search_queries:
+        for i, query in enumerate(search_queries, 1):
             try:
+                console.print(f"[dim]🔥 Firecrawl search {i}/{len(search_queries)}: {query[:80]}...[/dim]")
                 subreddits = await self._search_with_firecrawl(query)
+                console.print(f"[green]✓ Found {len(subreddits)} subreddits from search {i}[/green]")
                 all_subreddits.extend(subreddits)
                 await asyncio.sleep(2)  # Rate limiting
             except Exception as e:
-                console.print(f"[red]Error with Firecrawl search: {e}[/red]")
+                console.print(f"[red]Error with Firecrawl search {i}: {e}[/red]")
         
         # Deduplicate
         unique_subreddits = {}
@@ -265,10 +290,7 @@ class EnhancedSearchAgent:
                 "onlyMainContent": True,
                 "includeHtml": False
             },
-            "limit": 8,  # Increased limit for better coverage
-            "location": {
-                "country": "us"
-            }
+            "limit": 8  # Increased limit for better coverage
         }
         
         headers = {
@@ -276,7 +298,8 @@ class EnhancedSearchAgent:
             "Content-Type": "application/json"
         }
         
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=60)  # 60 second timeout
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, json=payload, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -384,15 +407,16 @@ class EnhancedSearchAgent:
             try:
                 # Use existing subreddit_utils function
                 info = get_subreddit_info(name)
-                if info and info.get("exists", False):
+                if info:  # If info is returned, subreddit exists
                     validated.append({
                         "name": name,
                         "subscribers": info.get("subscribers", 0),
-                        "description": info.get("description", ""),
-                        "is_active": info.get("is_active", False),
-                        "over_18": info.get("over_18", False),
+                        "description": info.get("public_description", "") or info.get("description", ""),
+                        "is_active": info.get("subscribers", 0) > 100,  # Consider active if >100 subscribers
+                        "over_18": info.get("over18", False),
                         "validation_status": "valid"
                     })
+                    console.print(f"[green]✓ r/{name} - {info.get('subscribers', 0)} subscribers[/green]")
                 else:
                     console.print(f"[dim]Subreddit r/{name} not found or private[/dim]")
             except Exception as e:
@@ -480,6 +504,20 @@ class EnhancedSearchAgent:
         except Exception as e:
             console.print(f"[red]Error generating AI recommendations: {e}[/red]")
             return self._create_fallback_recommendations(validated_subreddits)
+
+    def _get_fallback_subreddits(self) -> List[str]:
+        """
+        Provide fallback subreddits when external services fail
+        """
+        # General business and AI communities
+        fallback_subreddits = [
+            "entrepreneur", "startups", "smallbusiness", "marketing", 
+            "MachineLearning", "artificial", "ChatGPT", "OpenAI",
+            "business", "SaaS", "digitalnomad", "freelance",
+            "webdev", "programming", "coding", "developers"
+        ]
+        
+        return fallback_subreddits
 
     def _create_fallback_recommendations(self, validated_subreddits: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
         """

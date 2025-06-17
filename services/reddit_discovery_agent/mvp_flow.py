@@ -79,7 +79,7 @@ async def main():
     
     console.print(Panel.fit(
         "[bold]Starting subreddit discovery - this may take a few minutes![/bold]\n\n"
-        f"Using: {'🚀 Enhanced AI Discovery (o3/Claude 3.5/Perplexity)' if ENHANCED_AVAILABLE else '📊 Traditional Discovery (Fallback)'}\n\n"
+        f"Using: {'🚀 Enhanced AI Discovery (o3/Claude 4 Sonnet/Perplexity)' if ENHANCED_AVAILABLE else '📊 Traditional Discovery (Fallback)'}\n\n"
         "We'll search Reddit communities to find the best ones to help answer your question or achieve your goal."
     ))
     
