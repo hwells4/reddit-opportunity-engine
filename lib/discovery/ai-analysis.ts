@@ -136,27 +136,39 @@ export class AIAnalysisService {
     searchType: 'perplexity' | 'firecrawl'
   ): Promise<string[]> {
     const systemPrompt = searchType === 'perplexity' 
-      ? "You are a Reddit community discovery expert who understands how different audiences cluster into specific subreddits. Your goal is to find the EXACT communities where the target audience actively discusses their specific problems and needs."
+      ? "You are a specialized Reddit marketing research agent focused on identifying optimal Reddit communities for audience research. Your expertise lies in finding communities where specific audiences authentically discuss their problems, frustrations, and needs - NOT where they would be pitched solutions."
       : "You are an expert at crafting web search queries for finding Reddit discussions. Create queries that will find actual Reddit posts and comments about the topic."
 
     const userPrompt = `
-Product: ${product}
-Problem: ${problem}  
 Audience: ${audience}
-Questions: ${questions}
+Problem: ${problem}  
+Product: ${product}
+Research Questions: ${questions}
 
-Generate 6-8 ${searchType === 'perplexity' ? 'highly targeted search queries for Perplexity AI' : 'web search queries'} to find the most relevant Reddit communities for this specific product/audience combination.
+Generate 6-8 ${searchType === 'perplexity' ? 'precise search queries for Perplexity AI' : 'web search queries'} to find Reddit communities where ${audience} authentically discuss ${problem}.
 
 ${searchType === 'perplexity' 
-  ? `CRITICAL: Focus on finding subreddits where ${audience} specifically gather to discuss ${problem}. Think about:
-1. Professional/industry-specific communities for this audience
-2. Tool-specific communities where they seek solutions
-3. Communities focused on the exact problem/pain point
-4. Niche communities for advanced practitioners in this space
-5. Communities where they ask the specific questions mentioned
-6. Adjacent problem areas that lead to the same solution
+  ? `CRITICAL APPROACH - Find communities where the AUDIENCE gathers, NOT where the PRODUCT would be promoted:
 
-Be highly specific - avoid generic business/startup subreddits unless they're the primary audience. Look for communities that match the exact intersection of audience + problem + questions.`
+1. **Professional/Industry Communities**: Where does "${audience}" professionally congregate on Reddit?
+2. **Problem-Specific Discussions**: Where do they complain about, seek help with, or discuss "${problem}"?
+3. **Workflow/Tool Frustrations**: Where do they discuss current solutions that don't work?
+4. **Decision-Making Discussions**: Where do they ask for advice about solving this problem?
+5. **Experience Sharing**: Where do they share stories about dealing with this problem?
+6. **Niche Professional Challenges**: Where do they discuss industry-specific versions of this problem?
+
+AVOID: Generic business, marketing, startup, or product promotion subreddits unless the audience specifically works in those fields.
+
+FOCUS ON: Communities where you would find authentic discussions about the research questions provided.
+
+Example good queries:
+- "best subreddits for [specific profession] discussing [specific problem]"
+- "reddit communities where [audience] complain about [problem]"
+- "subreddits for [audience] seeking advice about [specific challenge]"
+
+Example bad queries:
+- "marketing subreddits for promoting [product]"
+- "business communities for [product category]"`
   : 'Include "site:reddit.com" in your queries. Focus on finding actual discussions, questions, and conversations about this topic.'
 }
 
@@ -220,22 +232,42 @@ Return ONLY a JSON array of query strings, no other text:
     }))
 
     const prompt = `
-Analyze these Reddit communities for a ${product} targeting ${audience} who struggle with ${problem}.
+You are analyzing Reddit communities for AUDIENCE RESEARCH purposes. The goal is to find where ${audience} authentically discuss ${problem} - NOT where to promote a product.
+
+Target Audience: ${audience}
+Core Problem: ${problem}
+Research Questions: ${questions}
 
 Subreddits to analyze:
 ${JSON.stringify(subredditData, null, 2)}
 
-Questions they ask: ${questions}
+CATEGORIZATION CRITERIA:
 
-Categorize into:
-1. PRIMARY: Highest relevance, direct target audience, perfect fit
-2. SECONDARY: Good relevance, broader audience, still valuable 
-3. NICHE: Specific use cases, smaller but highly targeted segments
+PRIMARY (Score 8-10): Communities where the EXACT target audience actively gathers and discusses the EXACT problem
+- Direct professional communities for this audience
+- Communities focused specifically on this problem area
+- High authentic discussion about the research questions
+- Active, engaged community discussing relevant challenges
 
-For each subreddit provide:
-- Relevance score (1-10)
-- Specific reason why it's relevant
-- Recommended engagement approach for this community
+SECONDARY (Score 6-7): Communities with significant overlap but broader scope
+- Adjacent professional communities
+- Related problem areas that intersect with the main problem
+- Partial audience match with relevant discussions
+- Valuable insights but not the primary gathering place
+
+NICHE (Score 4-5): Smaller but highly focused communities
+- Specialized segments of the target audience
+- Specific tools/contexts related to the problem
+- Lower activity but high relevance when active
+- Good for deep insights on specific aspects
+
+REJECT (Don't include): Generic business/marketing/startup communities unless the audience specifically works in those fields.
+
+For each relevant subreddit, analyze:
+1. Does the target audience actually gather here?
+2. Do they discuss the specific problem mentioned?
+3. Would the research questions be naturally discussed here?
+4. Is this where they seek advice, share frustrations, or ask for help about this problem?
 
 Return JSON in this exact format:
 {
@@ -243,8 +275,8 @@ Return JSON in this exact format:
     {
       "name": "subreddit_name",
       "relevance_score": 9,
-      "relevance_reason": "specific detailed reason",
-      "engagement_approach": "specific strategy for this community"
+      "relevance_reason": "Specific explanation of why this audience uses this community to discuss this problem",
+      "engagement_approach": "Research strategy for this community"
     }
   ],
   "secondary": [...],
@@ -256,7 +288,7 @@ Return JSON in this exact format:
       const response = await this.makeAICall([
         {
           role: 'system',
-          content: 'You are a Reddit marketing expert with deep knowledge of community dynamics. Analyze subreddits strategically based on audience fit, community culture, and engagement potential.'
+          content: 'You are a Reddit marketing research expert specializing in finding authentic communities where specific audiences discuss their real problems. You prioritize audience-first discovery over product promotion opportunities. Focus on where the target audience naturally gathers to seek help, share frustrations, and discuss challenges.'
         },
         { role: 'user', content: prompt }
       ], { requireJSON: true })

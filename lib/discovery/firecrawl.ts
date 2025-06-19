@@ -19,6 +19,43 @@ export class FirecrawlService {
   }
 
   /**
+   * Generate direct searches using the actual research questions + "site:reddit.com"
+   */
+  private generateQuestionBasedQueries(questions: string): string[] {
+    if (!questions || questions.trim().length === 0) {
+      return []
+    }
+
+    try {
+      // Parse questions if they're in JSON array format
+      let questionList: string[] = []
+      if (questions.trim().startsWith('[')) {
+        questionList = JSON.parse(questions)
+      } else {
+        // Split by common delimiters if it's a plain text list
+        questionList = questions.split(/[?\n•-]/).map(q => q.trim()).filter(q => q.length > 10)
+      }
+
+      // Take first 4-5 questions and append site:reddit.com search
+      const searchQueries = questionList.slice(0, 5).map(question => {
+        // Clean up the question and make it searchable
+        const cleanQuestion = question
+          .replace(/^How do/, 'How do')
+          .replace(/^What /, 'What ')
+          .replace(/[?"]/g, '')
+          .trim()
+        
+        return `${cleanQuestion} site:reddit.com`
+      })
+
+      return searchQueries.filter(q => q.length > 20) // Filter out too-short queries
+    } catch (error) {
+      console.warn('Could not parse questions for direct search, falling back to AI queries only')
+      return []
+    }
+  }
+
+  /**
    * Discover subreddits using Firecrawl's search capabilities
    */
   async discoverSubreddits(
@@ -31,16 +68,24 @@ export class FirecrawlService {
       throw new DiscoveryError('Firecrawl API key not configured', 'firecrawl')
     }
 
-    console.log('🔥 Generating intelligent Firecrawl search queries...')
+    console.log('🔥 Generating Firecrawl search strategies...')
     
-    // Use AI to generate intelligent search queries
-    const queries = await this.aiAnalysis.generateSearchQueries(
+    // Strategy 1: Direct question searches with site:reddit.com
+    const questionQueries = this.generateQuestionBasedQueries(questions)
+    console.log(`📝 Generated ${questionQueries.length} question-based queries`)
+    
+    // Strategy 2: AI-generated intelligent queries
+    const aiQueries = await this.aiAnalysis.generateSearchQueries(
       audience,
       problem,
       product,
       questions,
       'firecrawl'
     )
+    console.log(`📝 Generated ${aiQueries.length} AI-intelligent queries`)
+    
+    // Combine both strategies
+    const queries = [...questionQueries, ...aiQueries.slice(0, 3)]
 
     console.log(`📝 Generated ${queries.length} search queries`)
 

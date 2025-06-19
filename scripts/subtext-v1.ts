@@ -69,19 +69,20 @@ function displaySection(title: string) {
 }
 
 function displayRecommendationReasoning(recommendations: any) {
-  console.log(chalk.yellow('🧠 AI Recommendation Reasoning:'))
+  console.log(chalk.yellow('🧠 Audience Research Analysis:'))
+  console.log(chalk.gray('   (Focus: Where your audience discusses problems, NOT product promotion)'))
   console.log()
   
   // Show top 3 primary recommendations with reasoning
   const topPrimary = recommendations.primary.slice(0, 3)
   if (topPrimary.length > 0) {
-    console.log(chalk.bold.green('🎯 Top Primary Recommendations:'))
+    console.log(chalk.bold.green('🎯 Primary Communities (Exact Audience + Problem Match):'))
     topPrimary.forEach((rec: any, index: number) => {
       console.log(chalk.cyan(`${index + 1}. r/${rec.name}`))
-      console.log(chalk.gray(`   Score: ${rec.relevance_score}/10`))
-      console.log(chalk.gray(`   Reason: ${rec.relevance_reason}`))
+      console.log(chalk.gray(`   Relevance: ${rec.relevance_score}/10`))
+      console.log(chalk.gray(`   Why: ${rec.relevance_reason}`))
       if (rec.engagement_approach) {
-        console.log(chalk.gray(`   Strategy: ${rec.engagement_approach}`))
+        console.log(chalk.gray(`   Research Strategy: ${rec.engagement_approach}`))
       }
       console.log()
     })
@@ -90,13 +91,18 @@ function displayRecommendationReasoning(recommendations: any) {
   // Show top 2 secondary if no primary or to supplement
   const topSecondary = recommendations.secondary.slice(0, 2)
   if (topSecondary.length > 0 && topPrimary.length < 3) {
-    console.log(chalk.bold.blue('🔄 Top Secondary Recommendations:'))
+    console.log(chalk.bold.blue('🔄 Secondary Communities (Adjacent/Broader):'))
     topSecondary.forEach((rec: any, index: number) => {
       console.log(chalk.cyan(`${index + 1}. r/${rec.name}`))
-      console.log(chalk.gray(`   Score: ${rec.relevance_score}/10`))
-      console.log(chalk.gray(`   Reason: ${rec.relevance_reason}`))
+      console.log(chalk.gray(`   Relevance: ${rec.relevance_score}/10`))
+      console.log(chalk.gray(`   Why: ${rec.relevance_reason}`))
       console.log()
     })
+  }
+  
+  if (topPrimary.length === 0 && topSecondary.length === 0) {
+    console.log(chalk.red('⚠️ No highly relevant communities found. Consider refining your audience/problem definition.'))
+    console.log(chalk.gray('   The system prioritizes audience-specific communities over generic business/marketing subreddits.'))
   }
 }
 

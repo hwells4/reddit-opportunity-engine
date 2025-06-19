@@ -19,6 +19,44 @@ export class PerplexityService {
   }
 
   /**
+   * Generate direct searches using the actual research questions + "reddit"
+   * This mimics the strategy of asking the questions and seeing what pops up
+   */
+  private generateQuestionBasedQueries(questions: string): string[] {
+    if (!questions || questions.trim().length === 0) {
+      return []
+    }
+
+    try {
+      // Parse questions if they're in JSON array format
+      let questionList: string[] = []
+      if (questions.trim().startsWith('[')) {
+        questionList = JSON.parse(questions)
+      } else {
+        // Split by common delimiters if it's a plain text list
+        questionList = questions.split(/[?\n•-]/).map(q => q.trim()).filter(q => q.length > 10)
+      }
+
+      // Take first 4-6 questions and append reddit search
+      const searchQueries = questionList.slice(0, 6).map(question => {
+        // Clean up the question and make it searchable
+        const cleanQuestion = question
+          .replace(/^How do/, 'How do')
+          .replace(/^What /, 'What ')
+          .replace(/[?"]/g, '')
+          .trim()
+        
+        return `${cleanQuestion} reddit`
+      })
+
+      return searchQueries.filter(q => q.length > 15) // Filter out too-short queries
+    } catch (error) {
+      console.warn('Could not parse questions for direct search, falling back to AI queries only')
+      return []
+    }
+  }
+
+  /**
    * Discover subreddits using Perplexity's agentic AI capabilities
    */
   async discoverSubreddits(
@@ -31,18 +69,24 @@ export class PerplexityService {
       throw new DiscoveryError('Perplexity API key not configured', 'perplexity')
     }
 
-    console.log('🧠 Generating intelligent Perplexity queries...')
+    console.log('🧠 Generating search strategies...')
     
-    // Use AI to generate intelligent queries instead of hardcoded ones
-    const queries = await this.aiAnalysis.generateSearchQueries(
+    // Strategy 1: Direct question searches
+    const questionQueries = this.generateQuestionBasedQueries(questions)
+    console.log(`📝 Generated ${questionQueries.length} question-based queries`)
+    
+    // Strategy 2: AI-generated intelligent queries
+    const aiQueries = await this.aiAnalysis.generateSearchQueries(
       audience,
       problem,
       product,
       questions,
       'perplexity'
     )
-
-    console.log(`📝 Generated ${queries.length} intelligent queries`)
+    console.log(`📝 Generated ${aiQueries.length} AI-intelligent queries`)
+    
+    // Combine both strategies, prioritizing question-based queries
+    const queries = [...questionQueries, ...aiQueries.slice(0, 4)]
 
     const allCandidates: SubredditCandidate[] = []
 
