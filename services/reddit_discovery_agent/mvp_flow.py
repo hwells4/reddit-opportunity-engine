@@ -8,6 +8,8 @@ for superior subreddit finding capabilities.
 
 import os
 import asyncio
+import requests
+import uuid
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -76,6 +78,37 @@ async def main():
     if proceed.lower() != "y":
         console.print("[yellow]Let's try again.[/yellow]")
         return await main()
+    
+    # Create run in database first
+    console.print("[cyan]🗃️ Creating run record...[/cyan]")
+    
+    try:
+        api_base = os.getenv("API_BASE_URL", "http://localhost:3000")
+        response = requests.post(f"{api_base}/api/create-run", json={
+            "user_question": question_goal,
+            "problem_area": problem_area,
+            "target_audience": target_audience,
+            "product_type": product_type,
+            "product_name": "MVP Run"
+        })
+        
+        if response.status_code == 200:
+            run_data = response.json()
+            run_id = run_data["run_id"]
+            console.print(f"[green]✅ Run created: {run_id}[/green]")
+            
+            # Store run_id for use in Gumloop webhook
+            os.environ["CURRENT_RUN_ID"] = run_id
+            
+        else:
+            console.print(f"[red]❌ Failed to create run: {response.text}[/red]")
+            console.print("[yellow]Continuing without database tracking...[/yellow]")
+            run_id = None
+            
+    except Exception as e:
+        console.print(f"[red]❌ Error creating run: {e}[/red]")
+        console.print("[yellow]Continuing without database tracking...[/yellow]")
+        run_id = None
     
     console.print(Panel.fit(
         "[bold]Starting subreddit discovery - this may take a few minutes![/bold]\n\n"

@@ -387,6 +387,11 @@ def prepare_and_send_webhook(
     subreddits_str = ";".join(subreddit_names)
     subscribers_str = ";".join(subscriber_counts)
     
+    # Get run_id from environment (set by MVP flow)
+    run_id = os.getenv("CURRENT_RUN_ID", "")
+    if run_id:
+        console.print(f"[cyan]🗃️ Using Run ID: {run_id}[/cyan]")
+    
     # Create the payload according to the required format
     pipeline_inputs = [
         {"input_name": "email", "value": email},
@@ -399,7 +404,8 @@ def prepare_and_send_webhook(
         {"input_name": "product_type", "value": product_type},
         {"input_name": "features", "value": ""},
         {"input_name": "value_prop", "value": ""},
-        {"input_name": "context", "value": additional_context or ""}
+        {"input_name": "context", "value": additional_context or ""},
+        {"input_name": "run_id", "value": run_id}  # Add run_id for attribution
     ]
     
     payload = {
