@@ -11,8 +11,8 @@
  */
 
 import * as readline from 'readline'
-import fetch from 'node-fetch'
 import chalk from 'chalk'
+import fetch from 'node-fetch'
 
 interface SubredditCandidate {
   name: string
@@ -66,6 +66,38 @@ function displaySection(title: string) {
   console.log(chalk.bold.blue(`  ${title}`))
   console.log(chalk.blue('═'.repeat(50)))
   console.log()
+}
+
+function displayRecommendationReasoning(recommendations: any) {
+  console.log(chalk.yellow('🧠 AI Recommendation Reasoning:'))
+  console.log()
+  
+  // Show top 3 primary recommendations with reasoning
+  const topPrimary = recommendations.primary.slice(0, 3)
+  if (topPrimary.length > 0) {
+    console.log(chalk.bold.green('🎯 Top Primary Recommendations:'))
+    topPrimary.forEach((rec: any, index: number) => {
+      console.log(chalk.cyan(`${index + 1}. r/${rec.name}`))
+      console.log(chalk.gray(`   Score: ${rec.relevance_score}/10`))
+      console.log(chalk.gray(`   Reason: ${rec.relevance_reason}`))
+      if (rec.engagement_approach) {
+        console.log(chalk.gray(`   Strategy: ${rec.engagement_approach}`))
+      }
+      console.log()
+    })
+  }
+  
+  // Show top 2 secondary if no primary or to supplement
+  const topSecondary = recommendations.secondary.slice(0, 2)
+  if (topSecondary.length > 0 && topPrimary.length < 3) {
+    console.log(chalk.bold.blue('🔄 Top Secondary Recommendations:'))
+    topSecondary.forEach((rec: any, index: number) => {
+      console.log(chalk.cyan(`${index + 1}. r/${rec.name}`))
+      console.log(chalk.gray(`   Score: ${rec.relevance_score}/10`))
+      console.log(chalk.gray(`   Reason: ${rec.relevance_reason}`))
+      console.log()
+    })
+  }
 }
 
 async function collectUserInputs(): Promise<DiscoveryRequest> {
@@ -123,6 +155,10 @@ async function runDiscovery(request: DiscoveryRequest): Promise<SubredditCandida
     console.log(chalk.gray(`  • Primary: ${results.recommendations.primary.length}`))
     console.log(chalk.gray(`  • Secondary: ${results.recommendations.secondary.length}`))
     console.log(chalk.gray(`  • Niche: ${results.recommendations.niche.length}`))
+    console.log()
+    
+    // Show AI reasoning for top recommendations
+    displayRecommendationReasoning(results.recommendations)
     console.log()
     
     // Combine all recommendations into a flat list for selection
@@ -238,6 +274,78 @@ async function selectSubreddits(candidates: SubredditCandidate[]): Promise<Subre
   }
 }
 
+async function addManualSubreddits(currentSelection: SubredditCandidate[]): Promise<SubredditCandidate[]> {
+  console.log()
+  console.log(chalk.yellow('Would you like to add any additional subreddits manually?'))
+  console.log(chalk.gray('Enter subreddit names separated by commas (without "r/"), or press Enter to skip:'))
+  
+  const manualInput = await ask(chalk.cyan('Additional subreddits: '))
+  
+  if (!manualInput.trim()) {
+    return currentSelection
+  }
+  
+  // Parse comma-separated subreddit names
+  const subredditNames = manualInput
+    .split(',')
+    .map(name => name.trim().replace(/^r\//, ''))
+    .filter(name => name.length > 0)
+  
+  if (subredditNames.length === 0) {
+    return currentSelection
+  }
+  
+  console.log(chalk.blue(`🔍 Validating ${subredditNames.length} additional subreddits...`))
+  
+  try {
+    // Validate the manually entered subreddits
+    const response = await fetch(`${API_BASE}/api/discover/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subreddit_names: subredditNames })
+    })
+    
+    if (!response.ok) {
+      console.log(chalk.red('❌ Failed to validate manual subreddits'))
+      return currentSelection
+    }
+    
+    const validationResults = await response.json()
+    const validManualSubs = validationResults.validated_subreddits
+      .filter((sub: any) => sub.validation_status === 'valid')
+      .map((sub: any) => ({
+        name: sub.name,
+        subscribers: sub.subscribers,
+        description: sub.description,
+        is_active: sub.is_active,
+        over_18: sub.over_18,
+        validation_status: sub.validation_status,
+        category: 'manual' as const,
+        relevance_score: 8, // Give manual entries high relevance
+        relevance_reason: 'Manually selected by user'
+      }))
+    
+    const invalidCount = subredditNames.length - validManualSubs.length
+    
+    if (validManualSubs.length > 0) {
+      console.log(chalk.green(`✅ Added ${validManualSubs.length} valid subreddits:`))
+      validManualSubs.forEach((sub: any) => {
+        console.log(chalk.gray(`  • r/${sub.name} (${sub.subscribers.toLocaleString()} subscribers)`))
+      })
+    }
+    
+    if (invalidCount > 0) {
+      console.log(chalk.yellow(`⚠️ ${invalidCount} subreddits were invalid or private`))
+    }
+    
+    return [...currentSelection, ...validManualSubs]
+    
+  } catch (error) {
+    console.log(chalk.red('❌ Error validating manual subreddits:', error instanceof Error ? error.message : 'Unknown error'))
+    return currentSelection
+  }
+}
+
 async function collectAnalysisParams(): Promise<{ email: string, postLimit: string }> {
   displaySection('Analysis Configuration')
   
@@ -253,8 +361,29 @@ async function collectAnalysisParams(): Promise<{ email: string, postLimit: stri
   return { email: email.trim(), postLimit: postLimit.trim() }
 }
 
+function extractProductName(product: string): string {
+  // Simple pattern matching for product names
+  const patterns = [
+    /(?:called|named|is|called)\s+([A-Za-z0-9\s]+?)(?:\s|$|,|\.)/i,
+    /^([A-Za-z0-9]+(?:\s+[A-Za-z0-9]+)*)\s+(?:is|that|which)/i,
+    /^([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*)/,
+    /([A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*)\s+(?:tool|app|platform|service|software|solution)/i
+  ]
+  
+  for (const pattern of patterns) {
+    const match = product.match(pattern)
+    if (match && match[1] && match[1].trim().length > 2) {
+      return match[1].trim()
+    }
+  }
+  
+  return 'Subtext v1 Discovery'
+}
+
 async function createRun(request: DiscoveryRequest): Promise<string> {
   try {
+    const productName = extractProductName(request.product)
+    
     const response = await fetch(`${API_BASE}/api/runs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -263,7 +392,7 @@ async function createRun(request: DiscoveryRequest): Promise<string> {
         problem_area: request.problem,
         target_audience: request.audience,
         product_type: request.product,
-        product_name: 'Subtext v1 Discovery'
+        product_name: productName
       })
     })
     
@@ -317,11 +446,17 @@ async function sendToGumloop(
   console.log(chalk.gray(JSON.stringify(payload, null, 2)))
   console.log()
   
-  const confirmation = await ask(chalk.cyan('Send to Gumloop for analysis? (y/n/test) [test]: ')) || 'test'
+  const confirmation = await ask(chalk.cyan('Send to Gumloop for analysis? (y/n/test/skip) [skip]: ')) || 'skip'
   
   if (confirmation.toLowerCase() === 'n') {
     console.log(chalk.yellow('❌ Analysis cancelled.'))
     return false
+  }
+  
+  if (confirmation.toLowerCase() === 'skip') {
+    console.log(chalk.green('✅ Discovery test completed successfully!'))
+    console.log(chalk.yellow('Skipped Gumloop integration for testing purposes.'))
+    return true
   }
   
   if (confirmation.toLowerCase() === 'test') {
@@ -387,12 +522,15 @@ async function main() {
     }
     
     // Step 4: Human selection
-    const selectedSubreddits = await selectSubreddits(candidates)
+    let selectedSubreddits = await selectSubreddits(candidates)
     
     if (selectedSubreddits.length === 0) {
       console.log(chalk.red('❌ No subreddits selected. Exiting.'))
       process.exit(1)
     }
+    
+    // Step 4.5: Manual additions
+    selectedSubreddits = await addManualSubreddits(selectedSubreddits)
     
     // Step 5: Analysis configuration
     const { email, postLimit } = await collectAnalysisParams()

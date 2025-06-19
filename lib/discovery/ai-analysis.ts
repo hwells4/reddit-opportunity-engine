@@ -136,7 +136,7 @@ export class AIAnalysisService {
     searchType: 'perplexity' | 'firecrawl'
   ): Promise<string[]> {
     const systemPrompt = searchType === 'perplexity' 
-      ? "You are an expert at crafting search queries for Perplexity AI to find relevant Reddit communities. Create intelligent, varied queries that will discover different types of subreddits."
+      ? "You are a Reddit community discovery expert who understands how different audiences cluster into specific subreddits. Your goal is to find the EXACT communities where the target audience actively discusses their specific problems and needs."
       : "You are an expert at crafting web search queries for finding Reddit discussions. Create queries that will find actual Reddit posts and comments about the topic."
 
     const userPrompt = `
@@ -145,10 +145,18 @@ Problem: ${problem}
 Audience: ${audience}
 Questions: ${questions}
 
-Generate 4-6 ${searchType === 'perplexity' ? 'intelligent search queries for Perplexity AI' : 'web search queries'} to find the most relevant Reddit communities for this product/audience combination.
+Generate 6-8 ${searchType === 'perplexity' ? 'highly targeted search queries for Perplexity AI' : 'web search queries'} to find the most relevant Reddit communities for this specific product/audience combination.
 
 ${searchType === 'perplexity' 
-  ? 'Focus on finding subreddits where this audience discusses this problem and asks these types of questions. Be creative and think about different angles, related communities, and edge cases.'
+  ? `CRITICAL: Focus on finding subreddits where ${audience} specifically gather to discuss ${problem}. Think about:
+1. Professional/industry-specific communities for this audience
+2. Tool-specific communities where they seek solutions
+3. Communities focused on the exact problem/pain point
+4. Niche communities for advanced practitioners in this space
+5. Communities where they ask the specific questions mentioned
+6. Adjacent problem areas that lead to the same solution
+
+Be highly specific - avoid generic business/startup subreddits unless they're the primary audience. Look for communities that match the exact intersection of audience + problem + questions.`
   : 'Include "site:reddit.com" in your queries. Focus on finding actual discussions, questions, and conversations about this topic.'
 }
 

@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
     const { data: run, error: runError } = await supabase
       .from('runs')
       .insert({
-        status: 'processing',
+        status: 'running',
         user_question: body.user_question,
         problem_area: body.problem_area,
         target_audience: body.target_audience,
@@ -130,7 +130,11 @@ export async function POST(request: NextRequest) {
 
     if (runError) {
       console.error('Error creating run:', runError)
-      return NextResponse.json({ error: 'Failed to create run' }, { status: 500 })
+      return NextResponse.json({ 
+        error: 'Failed to create run',
+        details: runError.message,
+        code: runError.code
+      }, { status: 500 })
     }
 
     return NextResponse.json({ 
