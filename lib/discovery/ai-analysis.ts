@@ -7,6 +7,9 @@ class OpenRouterClient {
 
   constructor() {
     this.apiKey = process.env.OPENROUTER_API_KEY || ''
+  }
+
+  private validateApiKey() {
     if (!this.apiKey) {
       throw new Error('OPENROUTER_API_KEY environment variable is required')
     }
@@ -18,6 +21,7 @@ class OpenRouterClient {
     max_tokens?: number
     temperature?: number
   }) {
+    this.validateApiKey()
     const response = await fetch(`${this.baseURL}/chat/completions`, {
       method: 'POST',
       headers: {

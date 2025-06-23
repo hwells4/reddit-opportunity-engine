@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabaseClient() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
+  }
+  
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
+}
 
 export interface QuoteWithAttribution {
   quote_id: string
@@ -21,7 +30,7 @@ export interface QuoteWithAttribution {
 }
 
 async function getQuotesWithAttribution(runId: string): Promise<QuoteWithAttribution[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('quotes')
     .select(`
       quote_id,
@@ -61,7 +70,7 @@ async function getQuotesWithAttribution(runId: string): Promise<QuoteWithAttribu
 }
 
 async function getQuotesByCategory(runId: string, category: string): Promise<QuoteWithAttribution[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('quotes')
     .select(`
       quote_id,
@@ -118,7 +127,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Base query for posts with run_id
-    let postsQuery = supabase
+    let postsQuery = getSupabaseClient()
       .from('posts')
       .select('*')
       .eq('run_id', runId)
@@ -141,7 +150,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Base query for quotes with run_id
-    let quotesQuery = supabase
+    let quotesQuery = getSupabaseClient()
       .from('quotes')
       .select('*')
       .eq('run_id', runId)
@@ -168,7 +177,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get run information
-    const { data: runInfo, error: runError } = await supabase
+    const { data: runInfo, error: runError } = await getSupabaseClient()
       .from('runs')
       .select('*')
       .eq('run_id', runId)
@@ -246,7 +255,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build dynamic query for quotes
-    let quotesQuery = supabase
+    let quotesQuery = getSupabaseClient()
       .from('quotes')
       .select('*')
       .eq('run_id', run_id)
@@ -278,7 +287,7 @@ export async function POST(request: NextRequest) {
 
     // Get related posts
     const postIds = [...new Set(quotes.map((quote: any) => quote.post_id))]
-    const { data: posts, error: postsError } = await supabase
+    const { data: posts, error: postsError } = await getSupabaseClient()
       .from('posts')
       .select('*')
       .in('post_id', postIds)
