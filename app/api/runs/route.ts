@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabaseClient() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
+  }
+  
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
+}
 
 interface CreateRunRequest {
   user_question?: string
@@ -17,7 +26,7 @@ interface CreateRunRequest {
 }
 
 async function getRunStats(runId: string) {
-  const { data: run, error: runError } = await supabase
+  const { data: run, error: runError } = await getSupabaseClient()
     .from('runs')
     .select('*')
     .eq('run_id', runId)
@@ -27,7 +36,7 @@ async function getRunStats(runId: string) {
     throw new Error(`Failed to fetch run: ${runError.message}`)
   }
 
-  const { data: quoteCounts, error: countError } = await supabase
+  const { data: quoteCounts, error: countError } = await getSupabaseClient()
     .from('quotes')
     .select('category')
     .eq('run_id', runId)
@@ -50,7 +59,7 @@ async function getRunStats(runId: string) {
 }
 
 async function getAllRuns(userId?: string) {
-  let query = supabase
+  let query = getSupabaseClient()
     .from('runs')
     .select('*')
     .order('created_at', { ascending: false })
@@ -111,7 +120,7 @@ export async function POST(request: NextRequest) {
     const body: CreateRunRequest = await request.json()
     
     // Create run record
-    const { data: run, error: runError } = await supabase
+    const { data: run, error: runError } = await getSupabaseClient()
       .from('runs')
       .insert({
         status: 'running',

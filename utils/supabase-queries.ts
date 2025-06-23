@@ -1,9 +1,18 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabaseClient() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
+  }
+  
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
+}
 
 export interface QuoteWithAttribution {
   quote_id: string
@@ -24,7 +33,7 @@ export interface QuoteWithAttribution {
  * This replaces your Python script that searches through Google Sheets
  */
 export async function getQuotesWithAttribution(runId: string): Promise<QuoteWithAttribution[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('quotes')
     .select(`
       quote_id,
@@ -68,7 +77,7 @@ export async function getQuotesWithAttribution(runId: string): Promise<QuoteWith
  * Get quotes by category with attribution
  */
 export async function getQuotesByCategory(runId: string, category: string): Promise<QuoteWithAttribution[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabaseClient()
     .from('quotes')
     .select(`
       quote_id,

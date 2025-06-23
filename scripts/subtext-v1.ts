@@ -150,11 +150,19 @@ async function runDiscovery(request: DiscoveryRequest): Promise<SubredditCandida
     })
     
     if (!response.ok) {
-      const error = await response.json()
+      const error = await response.json() as { error?: string }
       throw new Error(`Discovery failed: ${error.error || response.statusText}`)
     }
     
-    const results = await response.json()
+    const results = await response.json() as {
+      total_subreddits_found: number
+      recommendations: {
+        primary: any[]
+        secondary: any[]
+        niche: any[]
+      }
+      validated_subreddits: any[]
+    }
     
     console.log(chalk.green('✅ Discovery complete!'))
     console.log(chalk.gray(`  • Found ${results.total_subreddits_found} valid subreddits`))
@@ -316,7 +324,7 @@ async function addManualSubreddits(currentSelection: SubredditCandidate[]): Prom
       return currentSelection
     }
     
-    const validationResults = await response.json()
+    const validationResults = await response.json() as { validated_subreddits: any[] }
     const validManualSubs = validationResults.validated_subreddits
       .filter((sub: any) => sub.validation_status === 'valid')
       .map((sub: any) => ({
@@ -406,7 +414,7 @@ async function createRun(request: DiscoveryRequest): Promise<string> {
       throw new Error(`Failed to create run: ${response.statusText}`)
     }
     
-    const data = await response.json()
+    const data = await response.json() as { run_id: string }
     console.log(chalk.green(`🗃️ Created run: ${data.run_id}`))
     return data.run_id
     
@@ -431,7 +439,7 @@ async function sendToGumloop(
   
   const payload: GumloopWebhookPayload = {
     user_id: process.env.GUMLOOP_USER_ID || 'EZUCg1VIYohJJgKgwDTrTyH2sC32',
-    saved_item_id: process.env.GUMLOOP_SAVED_ITEM_ID || 'aoq3DjMNT9hRP3JMHfosBT',
+    saved_item_id: process.env.GUMLOOP_SAVED_ITEM_ID || 'dAp1K1b5sXwTLNM8AZbGJZ',
     pipeline_inputs: [
       { input_name: 'email', value: email },
       { input_name: 'subscribers', value: subscriberCounts.join(';') },
@@ -496,7 +504,7 @@ async function sendToGumloop(
       return false
     }
     
-    const result = await response.json()
+    const result = await response.json() as { run_id?: string; url?: string }
     console.log(chalk.green('✅ Successfully started Gumloop analysis!'))
     console.log(chalk.gray(`Run ID: ${result.run_id || 'N/A'}`))
     console.log(chalk.gray(`Tracking URL: ${result.url || 'N/A'}`))

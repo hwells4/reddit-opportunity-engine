@@ -2,18 +2,19 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 
-// Validate environment variables
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
+function getSupabaseClient() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
+  }
+  
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
 }
-if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
-}
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
 
 interface ProcessedPostData {
   run_id: string
@@ -33,14 +34,10 @@ interface ParsedQuote {
   text: string
   category: string
   is_relevant: boolean
+  sentiment: string
+  theme: string
 }
 
-interface ProcessingResult {
-  posts_processed: number
-  quotes_extracted: number
-  parse_errors: number
-  run_id: string
-}
 
 class AnalysisParser {
   static extractRelevanceScore(content: string): number {
@@ -79,11 +76,12 @@ class AnalysisParser {
       return 'UNKNOWN';
     }
   }
+
 }
 
 class QuoteExtractor {
-  static extractQuotesFromSection(content: string, sectionName: string): Array<{text: string, is_question_relevant: boolean}> {
-    const quotes: Array<{text: string, is_question_relevant: boolean}> = [];
+  static extractQuotesFromSection(content: string, sectionName: string): Array<{text: string, is_question_relevant: boolean, sentiment: string, theme: string}> {
+    const quotes: Array<{text: string, is_question_relevant: boolean, sentiment: string, theme: string}> = [];
     
     try {
       const sectionRegex = new RegExp(`<${sectionName}>([\\s\\S]*?)<\\/${sectionName}>`);
@@ -93,24 +91,46 @@ class QuoteExtractor {
       
       const sectionContent = sectionMatch[1];
       
-      const patterns = [
-        /<quote is_question_relevant="(true|false)">(.*?)<\/quote>/g,
-        /<quote[^>]*>(.*?)<\/quote>/g,
-        /"([^"]+)"/g
-      ];
+      // Enhanced pattern to capture sentiment and theme attributes
+      const enhancedPattern = /<quote\s+is_question_relevant="(true|false)"\s+sentiment="([^"]*?)"\s+theme="([^"]*?)"[^>]*>(.*?)<\/quote>/g;
+      const basicPattern = /<quote\s+is_question_relevant="(true|false)"[^>]*>(.*?)<\/quote>/g;
+      const fallbackPattern = /<quote[^>]*>(.*?)<\/quote>/g;
+      
+      const patterns = [enhancedPattern, basicPattern, fallbackPattern];
       
       for (const pattern of patterns) {
         let match: RegExpExecArray | null;
         while ((match = pattern.exec(sectionContent)) !== null) {
-          let text = match[2] || match[1];
-          let isRelevant = match[1] === 'true' || true;
+          let text, isRelevant, sentiment, theme;
+          
+          if (pattern === enhancedPattern) {
+            // Full attribute extraction
+            isRelevant = match[1] === 'true';
+            sentiment = match[2] || 'neutral';
+            theme = match[3] || 'general';
+            text = match[4];
+          } else if (pattern === basicPattern) {
+            // Basic extraction with defaults
+            isRelevant = match[1] === 'true';
+            sentiment = 'neutral';
+            theme = 'general';
+            text = match[2];
+          } else {
+            // Fallback extraction
+            isRelevant = true;
+            sentiment = 'neutral';
+            theme = 'general';
+            text = match[1];
+          }
           
           text = this.cleanQuoteText(text);
           
           if (text.length > 10) {
             quotes.push({
               text: text,
-              is_question_relevant: isRelevant
+              is_question_relevant: isRelevant,
+              sentiment: sentiment,
+              theme: theme
             });
           }
         }
@@ -148,7 +168,9 @@ class QuoteExtractor {
         allQuotes.push({
           text: quote.text,
           category: section.category,
-          is_relevant: quote.is_question_relevant
+          is_relevant: quote.is_question_relevant,
+          sentiment: quote.sentiment,
+          theme: quote.theme
         });
       });
     }
@@ -162,7 +184,7 @@ class DatabaseService {
     const relevanceScore = AnalysisParser.extractRelevanceScore(post.raw_analysis);
     const classification = AnalysisParser.extractContentClassification(post.raw_analysis);
     
-    const { error } = await supabase
+    const { error } = await getSupabaseClient()
       .from('posts')
       .upsert({
         post_id: post.post_id,
@@ -186,17 +208,19 @@ class DatabaseService {
   static async insertQuotes(quotes: ParsedQuote[], postId: string, runId: string) {
     if (quotes.length === 0) return 0;
 
-    const quotesToInsert = quotes.map((quote, index) => ({
+    const quotesToInsert = quotes.map((quote) => ({
       quote_id: randomUUID(),
       post_id: postId,
       run_id: runId,
       text: quote.text,
       category: quote.category,
       context: quote.is_relevant ? 'relevant' : 'not_relevant',
+      sentiment: quote.sentiment,
+      theme: quote.theme,
       relevance_score: quote.is_relevant ? 1.0 : 0.0
     }));
 
-    const { error } = await supabase
+    const { error } = await getSupabaseClient()
       .from('quotes')
       .upsert(quotesToInsert);
 
@@ -208,7 +232,7 @@ class DatabaseService {
   }
 
   static async updateRunStats(runId: string, stats: { posts: number, quotes: number, errors: number }) {
-    const { error } = await supabase
+    const { error } = await getSupabaseClient()
       .from('runs')
       .update({
         posts_analyzed_count: stats.posts,
