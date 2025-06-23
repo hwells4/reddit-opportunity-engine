@@ -31,6 +31,25 @@ interface DiscoveryRequest {
   questions?: string
 }
 
+interface Account {
+  account_id: string
+  display_name: string
+  company_name: string
+  contact_name: string
+  email: string
+  website_url?: string
+  created_date: string
+}
+
+interface CreateAccountRequest {
+  company_name: string
+  contact_name: string
+  email: string
+  website_url?: string
+  company_description?: string
+  industry?: string
+}
+
 interface GumloopWebhookPayload {
   user_id: string
   saved_item_id: string
@@ -104,6 +123,211 @@ function displayRecommendationReasoning(recommendations: any) {
   if (topPrimary.length === 0 && topSecondary.length === 0) {
     console.log(chalk.red('⚠️ No highly relevant communities found. Consider refining your audience/problem definition.'))
     console.log(chalk.gray('   The system prioritizes audience-specific communities over generic business/marketing subreddits.'))
+  }
+}
+
+async function selectOrCreateAccount(): Promise<Account> {
+  displaySection('Account Selection')
+  
+  console.log(chalk.yellow('Select an existing account or create a new one:'))
+  console.log(chalk.gray('1. Search existing accounts'))
+  console.log(chalk.gray('2. Create new account'))
+  console.log(chalk.gray('3. Use recent accounts'))
+  console.log()
+  
+  const choice = await ask(chalk.cyan('Choose option (1-3): '))
+  
+  switch (choice.trim()) {
+    case '1':
+      return await searchAndSelectAccount()
+    case '2':
+      return await createNewAccount()
+    case '3':
+      return await selectFromRecentAccounts()
+    default:
+      console.log(chalk.yellow('Invalid choice. Showing recent accounts...'))
+      return await selectFromRecentAccounts()
+  }
+}
+
+async function searchAndSelectAccount(): Promise<Account> {
+  console.log()
+  const searchQuery = await ask(chalk.cyan('Search by company name, contact name, or email: '))
+  
+  if (!searchQuery.trim()) {
+    console.log(chalk.yellow('No search query provided. Showing recent accounts...'))
+    return await selectFromRecentAccounts()
+  }
+  
+  try {
+    console.log(chalk.blue('🔍 Searching accounts...'))
+    
+    const response = await fetch(`${API_BASE}/api/accounts/search?q=${encodeURIComponent(searchQuery)}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.statusText}`)
+    }
+    
+    const results = await response.json() as { accounts: Account[] }
+    
+    if (results.accounts.length === 0) {
+      console.log(chalk.yellow('No accounts found. Would you like to create a new account?'))
+      const createNew = await ask(chalk.cyan('Create new account? (y/n): '))
+      if (createNew.toLowerCase() === 'y') {
+        return await createNewAccount()
+      } else {
+        return await selectFromRecentAccounts()
+      }
+    }
+    
+    return await displayAccountsForSelection(results.accounts, 'Search Results')
+    
+  } catch (error) {
+    console.log(chalk.red('❌ Search failed:'), error instanceof Error ? error.message : 'Unknown error')
+    console.log(chalk.yellow('Falling back to recent accounts...'))
+    return await selectFromRecentAccounts()
+  }
+}
+
+async function selectFromRecentAccounts(): Promise<Account> {
+  try {
+    console.log(chalk.blue('📋 Loading recent accounts...'))
+    
+    const response = await fetch(`${API_BASE}/api/accounts/search?limit=10`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Failed to load accounts: ${response.statusText}`)
+    }
+    
+    const results = await response.json() as { accounts: Account[] }
+    
+    if (results.accounts.length === 0) {
+      console.log(chalk.yellow('No existing accounts found. Creating new account...'))
+      return await createNewAccount()
+    }
+    
+    return await displayAccountsForSelection(results.accounts, 'Recent Accounts')
+    
+  } catch (error) {
+    console.log(chalk.red('❌ Failed to load accounts:'), error instanceof Error ? error.message : 'Unknown error')
+    console.log(chalk.yellow('Creating new account...'))
+    return await createNewAccount()
+  }
+}
+
+async function displayAccountsForSelection(accounts: Account[], title: string): Promise<Account> {
+  console.log()
+  console.log(chalk.bold.blue(`${title}:`))
+  console.log()
+  
+  accounts.forEach((account, index) => {
+    console.log(`${chalk.gray(`${index + 1}.`)} ${chalk.cyan(account.display_name)}`)  
+    console.log(chalk.gray(`   Email: ${account.email}`))
+    if (account.website_url) {
+      console.log(chalk.gray(`   Website: ${account.website_url}`))
+    }
+    console.log(chalk.gray(`   Created: ${account.created_date}`))
+    console.log()
+  })
+  
+  console.log(`${chalk.gray(`${accounts.length + 1}.`)} ${chalk.green('Create new account')}`)
+  console.log()
+  
+  const selection = await ask(chalk.cyan(`Select account (1-${accounts.length + 1}): `))
+  
+  try {
+    const index = parseInt(selection.trim()) - 1
+    
+    if (index === accounts.length) {
+      // Create new account option
+      return await createNewAccount()
+    }
+    
+    if (index >= 0 && index < accounts.length) {
+      const selectedAccount = accounts[index]
+      console.log(chalk.green(`✅ Selected: ${selectedAccount.display_name}`))
+      return selectedAccount
+    } else {
+      console.log(chalk.yellow('Invalid selection. Using first account.'))
+      return accounts[0]
+    }
+    
+  } catch (error) {
+    console.log(chalk.yellow('Invalid selection. Using first account.'))
+    return accounts[0]
+  }
+}
+
+async function createNewAccount(): Promise<Account> {
+  console.log()
+  console.log(chalk.bold.blue('Create New Account'))
+  console.log(chalk.gray('Enter the following information:'))
+  console.log()
+  
+  const companyName = await ask(chalk.cyan('Company name: '))
+  const contactName = await ask(chalk.cyan('Contact name: '))
+  const email = await ask(chalk.cyan('Email address: '))
+  const websiteUrl = await ask(chalk.cyan('Website URL (optional): '))
+  const industry = await ask(chalk.cyan('Industry (optional): '))
+  const description = await ask(chalk.cyan('Brief company description (optional): '))
+  
+  const accountData: CreateAccountRequest = {
+    company_name: companyName.trim(),
+    contact_name: contactName.trim(),
+    email: email.trim(),
+    website_url: websiteUrl.trim() || undefined,
+    industry: industry.trim() || undefined,
+    company_description: description.trim() || undefined
+  }
+  
+  // Validate required fields
+  if (!accountData.company_name || !accountData.contact_name || !accountData.email) {
+    console.log(chalk.red('❌ Missing required fields. Please try again.'))
+    return await createNewAccount()
+  }
+  
+  try {
+    console.log(chalk.blue('🔄 Creating account...'))
+    
+    const response = await fetch(`${API_BASE}/api/accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(accountData)
+    })
+    
+    if (!response.ok) {
+      const error = await response.json() as { error?: string }
+      throw new Error(error.error || response.statusText)
+    }
+    
+    const result = await response.json() as { account: any }
+    
+    console.log(chalk.green('✅ Account created successfully!'))
+    console.log(chalk.gray(`Account ID: ${result.account.account_id}`))
+    
+    // Format as Account interface
+    const newAccount: Account = {
+      account_id: result.account.account_id,
+      display_name: `${result.account.company_name} (${result.account.contact_name})`,
+      company_name: result.account.company_name,
+      contact_name: result.account.contact_name,
+      email: result.account.email,
+      website_url: result.account.website_url,
+      created_date: new Date(result.account.created_at).toLocaleDateString()
+    }
+    
+    return newAccount
+    
+  } catch (error) {
+    console.log(chalk.red('❌ Failed to create account:'), error instanceof Error ? error.message : 'Unknown error')
+    console.log(chalk.yellow('Please try again.'))
+    return await createNewAccount()
   }
 }
 
@@ -361,10 +585,13 @@ async function addManualSubreddits(currentSelection: SubredditCandidate[]): Prom
   }
 }
 
-async function collectAnalysisParams(): Promise<{ email: string, postLimit: string }> {
+async function collectAnalysisParams(account: Account): Promise<{ email: string, postLimit: string }> {
   displaySection('Analysis Configuration')
   
-  const email = await ask(chalk.cyan('Email address for results: '))
+  console.log(chalk.gray(`Account: ${account.display_name}`))
+  console.log()
+  
+  const email = await ask(chalk.cyan(`Email address for results [${account.email}]: `)) || account.email
   
   console.log(chalk.yellow('How many posts to analyze per subreddit?'))
   console.log(chalk.gray('  • 25: Quick analysis (~5 min)'))
@@ -395,7 +622,7 @@ function extractProductName(product: string): string {
   return 'Subtext v1 Discovery'
 }
 
-async function createRun(request: DiscoveryRequest): Promise<string> {
+async function createRun(request: DiscoveryRequest, account: Account): Promise<string> {
   try {
     const productName = extractProductName(request.product)
     
@@ -407,7 +634,8 @@ async function createRun(request: DiscoveryRequest): Promise<string> {
         problem_area: request.problem,
         target_audience: request.audience,
         product_type: request.product,
-        product_name: productName
+        product_name: productName,
+        account_id: account.account_id
       })
     })
     
@@ -430,7 +658,8 @@ async function sendToGumloop(
   request: DiscoveryRequest,
   email: string,
   postLimit: string,
-  runId: string
+  runId: string,
+  account: Account
 ): Promise<boolean> {
   displaySection('Gumloop Analysis')
   
@@ -445,7 +674,7 @@ async function sendToGumloop(
       { input_name: 'email', value: email },
       { input_name: 'subscribers', value: subscriberCounts.join(';') },
       { input_name: 'post_limit', value: postLimit },
-      { input_name: 'name', value: '' },
+      { input_name: 'name', value: account.contact_name },
       { input_name: 'subreddits', value: subredditNames.join(';') },
       { input_name: 'audience', value: request.audience },
       { input_name: 'problem_area', value: request.problem },
@@ -522,13 +751,16 @@ async function main() {
   try {
     displayBanner()
     
-    // Step 1: Collect user inputs
+    // Step 1: Select or create account
+    const account = await selectOrCreateAccount()
+    
+    // Step 2: Collect user inputs
     const request = await collectUserInputs()
     
-    // Step 2: Create run record
-    const runId = await createRun(request)
+    // Step 3: Create run record
+    const runId = await createRun(request, account)
     
-    // Step 3: Run AI discovery
+    // Step 4: Run AI discovery
     const candidates = await runDiscovery(request)
     
     if (candidates.length === 0) {
@@ -536,7 +768,7 @@ async function main() {
       process.exit(1)
     }
     
-    // Step 4: Human selection
+    // Step 5: Human selection
     let selectedSubreddits = await selectSubreddits(candidates)
     
     if (selectedSubreddits.length === 0) {
@@ -544,14 +776,14 @@ async function main() {
       process.exit(1)
     }
     
-    // Step 4.5: Manual additions
+    // Step 5.5: Manual additions
     selectedSubreddits = await addManualSubreddits(selectedSubreddits)
     
-    // Step 5: Analysis configuration
-    const { email, postLimit } = await collectAnalysisParams()
+    // Step 6: Analysis configuration
+    const { email, postLimit } = await collectAnalysisParams(account)
     
-    // Step 6: Send to Gumloop
-    const success = await sendToGumloop(selectedSubreddits, request, email, postLimit, runId)
+    // Step 7: Send to Gumloop
+    const success = await sendToGumloop(selectedSubreddits, request, email, postLimit, runId, account)
     
     // Final summary
     console.log()

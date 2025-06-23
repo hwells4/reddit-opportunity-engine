@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Client } from "@notionhq/client";
+import { createClient } from '@supabase/supabase-js';
 import {
   generateParentPageTitle,
   extractCompanyName,
@@ -16,6 +17,54 @@ import {
 const notion = new Client({
   auth: process.env.NOTION_API_KEY,
 });
+
+// Initialize Supabase client for account data
+function getSupabaseClient() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return null;
+  }
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+}
+
+interface AccountData {
+  account_id: string;
+  company_name: string;
+  contact_name: string;
+  email: string;
+  website_url?: string;
+  company_description?: string;
+  industry?: string;
+}
+
+// Fetch account data for enhanced personalization
+async function getAccountData(accountId: string): Promise<AccountData | null> {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn('Supabase client not available, falling back to email extraction');
+      return null;
+    }
+
+    const { data: account, error } = await supabase
+      .from('accounts')
+      .select('account_id, company_name, contact_name, email, website_url, company_description, industry')
+      .eq('account_id', accountId)
+      .single();
+
+    if (error || !account) {
+      console.warn(`Account ${accountId} not found, falling back to email extraction`);
+      return null;
+    }
+
+    return account;
+  } catch (error) {
+    console.error('Error fetching account data:', error);
+    return null;
+  }
+}
 
 // Add debug logging utility
 const DEBUG = process.env.NODE_ENV === 'development' || process.env.NOTION_DEBUG === 'true';
@@ -49,6 +98,7 @@ interface ReportData {
   comprehensiveTemplateId?: string;
   homepageTemplateId?: string;
   clientType?: 'demo' | 'existing' | 'prospect'; // For different CTAs
+  accountId?: string; // Account association for enhanced personalization
   metadata?: {
     generatedAt?: string;
     analysisType?: string;
@@ -83,8 +133,10 @@ export async function POST(request: Request) {
       comprehensiveReportLength: body.comprehensiveReport?.length || 0,
       subreddit: body.subreddit,
       email: body.email,
-      clientType: body.clientType
+      clientType: body.clientType,
+      accountId: body.accountId
     });
+    
     const { 
       strategyReport, 
       comprehensiveReport, 
@@ -96,8 +148,16 @@ export async function POST(request: Request) {
       comprehensiveTemplateId,
       homepageTemplateId,
       clientType,
+      accountId,
       metadata 
     } = body;
+
+    // Fetch account data for enhanced personalization
+    let accountData: AccountData | null = null;
+    if (accountId) {
+      accountData = await getAccountData(accountId);
+      debugLog('account-data', accountData);
+    }
     
     // Generate a smart title based on the reports using AI
     const smartTitle = await generateSmartReportTitle(strategyReport, comprehensiveReport);
@@ -125,11 +185,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // --- Modularized: Extract names and report type ---
-    const companyName = extractCompanyName(email);
-    const contactName = extractContactName(email);
+    // --- Enhanced: Use account data or extract from email ---
+    const companyName = accountData?.company_name || extractCompanyName(email);
+    const contactName = accountData?.contact_name || extractContactName(email);
     const reportType = extractReportType(metadata);
-    const parentPageTitle = generateParentPageTitle({ email, metadata, reportType, date: new Date() });
+    const parentPageTitle = generateParentPageTitle({ 
+      email: accountData?.email || email, 
+      metadata, 
+      reportType, 
+      date: new Date(),
+      accountData 
+    });
     // --- Create the parent page in the database (minimal, just a link) ---
     // We'll create the homepage next and update the parent page with the homepage URL if needed
     const parentPage = await notion.pages.create({
@@ -194,12 +260,17 @@ export async function POST(request: Request) {
       children: createParentPageContent({ homepageUrl }),
     });
 
-    // --- Generate the homepage intro using LLM (OpenRouter) ---
+    // --- Generate the homepage intro using LLM (OpenRouter) with account context ---
     const llmPrompt = generateHomepageIntroPrompt({
       contactName,
       companyName,
       strategyReport: strategyReport || '',
       comprehensiveReport: comprehensiveReport || '',
+      accountData: accountData ? {
+        industry: accountData.industry,
+        company_description: accountData.company_description,
+        website_url: accountData.website_url
+      } : undefined
     });
     const homepageIntro = await getHomepageIntroFromLLM(llmPrompt);
 

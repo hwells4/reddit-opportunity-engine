@@ -23,6 +23,7 @@ interface CreateRunRequest {
   product_name?: string
   subreddits?: string[]
   user_id?: string // For future multi-user support
+  account_id: string // Required account association
 }
 
 async function getRunStats(runId: string) {
@@ -119,6 +120,29 @@ export async function POST(request: NextRequest) {
   try {
     const body: CreateRunRequest = await request.json()
     
+    // Validate required account_id
+    if (!body.account_id) {
+      return NextResponse.json(
+        { error: 'account_id is required' },
+        { status: 400 }
+      )
+    }
+    
+    // Verify account exists
+    const { data: account, error: accountError } = await getSupabaseClient()
+      .from('accounts')
+      .select('account_id')
+      .eq('account_id', body.account_id)
+      .eq('is_active', true)
+      .single()
+    
+    if (accountError || !account) {
+      return NextResponse.json(
+        { error: 'Invalid or inactive account_id' },
+        { status: 400 }
+      )
+    }
+    
     // Create run record
     const { data: run, error: runError } = await getSupabaseClient()
       .from('runs')
@@ -131,6 +155,7 @@ export async function POST(request: NextRequest) {
         product_name: body.product_name,
         subreddits: body.subreddits,
         user_id: body.user_id, // For future multi-user support
+        account_id: body.account_id,
         posts_analyzed_count: 0,
         quotes_extracted_count: 0
       })

@@ -4,13 +4,18 @@
  * Generate the parent page title for the Notion database entry.
  * Format: "{Company Name} {Report Type/Short Description} Report - {MM/DD/YYYY}"
  */
-export function generateParentPageTitle({ email, metadata, reportType, date }: {
+export function generateParentPageTitle({ email, metadata, reportType, date, accountData }: {
   email?: string;
   metadata?: any;
   reportType?: string;
   date?: Date;
+  accountData?: {
+    company_name: string;
+    contact_name: string;
+    industry?: string;
+  } | null;
 }): string {
-  const companyName = extractCompanyName(email);
+  const companyName = accountData?.company_name || extractCompanyName(email);
   const type = extractReportType(metadata, reportType);
   const dateStr = (date || new Date()).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
   return `${companyName} ${type} Report - ${dateStr}`;
@@ -54,17 +59,30 @@ export function extractReportType(metadata?: any, fallback?: string): string {
 /**
  * Generate the homepage intro prompt for the LLM.
  */
-export function generateHomepageIntroPrompt({ contactName, companyName, strategyReport, comprehensiveReport }: {
+export function generateHomepageIntroPrompt({ contactName, companyName, strategyReport, comprehensiveReport, accountData }: {
   contactName: string;
   companyName: string;
   strategyReport: string;
   comprehensiveReport: string;
+  accountData?: {
+    industry?: string;
+    company_description?: string;
+    website_url?: string;
+  };
 }): string {
-  return `Write a concise intro for a client report page. Do NOT include any greeting (that's already handled). Write 1-2 direct sentences explaining who we analyzed and what we wanted to learn. Then explain how they can use this for marketing: landing page copy, content ideas, conversion optimization, sales scripts, etc.
+  const companyContext = accountData ? `
+Company Context:
+- Industry: ${accountData.industry || 'Not specified'}
+- Company Description: ${accountData.company_description || 'Not provided'}
+- Website: ${accountData.website_url || 'Not provided'}` : '';
 
-Use bullet points with **bold** headings for the Strategy Report and Comprehensive Analysis sections. Write in normal business language - don't call the reports "insightful" or use fluffy marketing speak.
+  return `Write a concise intro for a client report page for ${companyName}. Do NOT include any greeting (that's already handled). Write 1-2 direct sentences explaining who we analyzed and what we wanted to learn, specifically for ${companyName}'s ${accountData?.industry ? accountData.industry + ' ' : ''}business. Then explain how they can use this for marketing: landing page copy, content ideas, conversion optimization, sales scripts, etc.
 
-Add a P.S. at the end: "P.S. Try copying the full report and uploading it as context to ChatGPT or Claude. Use Opus 4 or o3 and ask it to write content for you or optimize existing content. You'll likely be surprised by the results."
+Use bullet points with **bold** headings for the Strategy Report and Comprehensive Analysis sections. Write in normal business language - don't call the reports "insightful" or use fluffy marketing speak.${companyContext ? `
+
+Make sure to reference how these insights are specifically relevant for ${companyName}'s ${accountData?.industry || 'business'} context.` : ''}
+
+Add a P.S. at the end: "P.S. Try copying the full report and uploading it as context to ChatGPT or Claude. Use Opus 4 or o3 and ask it to write content for you or optimize existing content. You'll likely be surprised by the results."${companyContext}
 
 Here are the reports:
 
