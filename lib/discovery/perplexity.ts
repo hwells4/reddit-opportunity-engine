@@ -1,6 +1,7 @@
 import { SubredditCandidate, PerplexityResponse, DiscoveryError, RateLimitError } from './types'
 import { AIAnalysisService } from './ai-analysis'
 import { extractSubredditName, isValidSubredditName, sleep } from './index'
+import { getValidatedApiKey } from '../../utils/api-key-validation'
 
 export class PerplexityService {
   private apiKey: string
@@ -10,7 +11,7 @@ export class PerplexityService {
   private readonly REQUEST_DELAY = 1000 // 1 second between requests
 
   constructor() {
-    this.apiKey = process.env.PERPLEXITY_API_KEY || ''
+    this.apiKey = getValidatedApiKey('PERPLEXITY_API_KEY') || ''
     this.aiAnalysis = new AIAnalysisService()
     
     if (!this.apiKey) {

@@ -1,6 +1,7 @@
 import { SubredditCandidate, FirecrawlResponse, DiscoveryError, RateLimitError } from './types'
 import { AIAnalysisService } from './ai-analysis'
 import { extractSubredditName, isValidSubredditName, sleep } from './index'
+import { getValidatedApiKey } from '../../utils/api-key-validation'
 
 export class FirecrawlService {
   private apiKey: string
@@ -10,7 +11,7 @@ export class FirecrawlService {
   private readonly REQUEST_DELAY = 2000 // 2 seconds between requests (Firecrawl is more rate-limited)
 
   constructor() {
-    this.apiKey = process.env.FIRECRAWL_API_KEY || ''
+    this.apiKey = getValidatedApiKey('FIRECRAWL_API_KEY') || ''
     this.aiAnalysis = new AIAnalysisService()
     
     if (!this.apiKey) {
@@ -138,10 +139,8 @@ export class FirecrawlService {
 
     const payload = {
       query,
-      pageOptions: {
-        onlyMainContent: true,
-        includeHtml: false,
-        includeRawHtml: false
+      scrapeOptions: {
+        formats: ['markdown']
       },
       limit: 8 // Reasonable limit to avoid hitting rate limits
     }

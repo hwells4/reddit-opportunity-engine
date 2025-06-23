@@ -13,6 +13,7 @@
 import * as readline from 'readline'
 import chalk from 'chalk'
 import fetch from 'node-fetch'
+import { getValidatedApiKey } from '../utils/api-key-validation'
 
 interface SubredditCandidate {
   name: string
@@ -39,7 +40,7 @@ interface GumloopWebhookPayload {
   }>
 }
 
-const API_BASE = process.env.API_BASE_URL || 'http://localhost:3000'
+const API_BASE = process.env.API_BASE_URL || 'https://reddit-opportunity-engine-production.up.railway.app'
 const GUMLOOP_API_URL = 'https://api.gumloop.com/api/v1/start_pipeline'
 
 // CLI utilities
@@ -481,7 +482,7 @@ async function sendToGumloop(
   
   // Send actual request
   try {
-    const apiKey = process.env.GUMLOOP_API_KEY
+    const apiKey = getValidatedApiKey('GUMLOOP_API_KEY')
     if (!apiKey) {
       console.log(chalk.red('❌ GUMLOOP_API_KEY not set. Please configure your environment.'))
       return false

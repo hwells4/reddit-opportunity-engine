@@ -1,4 +1,5 @@
 import { AIMessage, AIModelConfig, SubredditRecommendation, ValidatedSubreddit, DiscoveryError } from './types'
+import { getValidatedApiKey } from '../../utils/api-key-validation'
 
 // OpenRouter client configuration (not OpenAI!)
 class OpenRouterClient {
@@ -6,7 +7,7 @@ class OpenRouterClient {
   private baseURL = "https://openrouter.ai/api/v1"
 
   constructor() {
-    this.apiKey = process.env.OPENROUTER_API_KEY || ''
+    this.apiKey = getValidatedApiKey('OPENROUTER_API_KEY') || ''
   }
 
   private validateApiKey() {
