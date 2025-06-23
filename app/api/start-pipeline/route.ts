@@ -4,25 +4,26 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // Handle both old simple format and new comprehensive format
-    let gumloopPayload;
+    // Extract parameters for the new pipeline format
+    const userId = body.user_id || "EZUCg1VIYohJJgKgwDTrTyH2sC32";
+    const savedItemId = body.saved_item_id || "2VJar3Dimtp46XZzXAzhEZ";
+    
+    // Get base URL for webhook callbacks
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+      : "https://reddit-opportunity-engine-production.up.railway.app";
+    
+    // Build the new pipeline payload format (flat structure as shown in curl)
+    let gumloopPayload: any = {
+      run_id: body.run_id || "",
+      base_url: baseUrl
+    };
     
     if (body.pipeline_inputs) {
-      // New comprehensive format from CLI
-      gumloopPayload = {
-        user_id: body.user_id || "EZUCg1VIYohJJgKgwDTrTyH2sC32",
-        saved_item_id: body.saved_item_id || "2VJar3Dimtp46XZzXAzhEZ",
-        pipeline_inputs: [
-          ...body.pipeline_inputs,
-          // Add webhook_base_url for Gumloop pipeline
-          { 
-            input_name: "webhook_base_url", 
-            value: process.env.RAILWAY_PUBLIC_DOMAIN 
-              ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
-              : "https://reddit-opportunity-engine-production.up.railway.app"
-          }
-        ]
-      };
+      // New comprehensive format from CLI - convert pipeline_inputs to flat structure
+      for (const input of body.pipeline_inputs) {
+        gumloopPayload[input.input_name] = input.value;
+      }
     } else {
       // Legacy simple format
       const { subreddit, focus, email, postLimit } = body;
@@ -35,34 +36,25 @@ export async function POST(request: Request) {
       }
       
       gumloopPayload = {
-        user_id: "EZUCg1VIYohJJgKgwDTrTyH2sC32",
-        saved_item_id: "2VJar3Dimtp46XZzXAzhEZ",
-        pipeline_inputs: [
-          { input_name: "email", value: email },
-          { input_name: "post_limit", value: postLimit || "75" },
-          { input_name: "category", value: focus || "" },
-          { input_name: "subreddit", value: subreddit },
-          { 
-            input_name: "webhook_base_url", 
-            value: process.env.RAILWAY_PUBLIC_DOMAIN 
-              ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
-              : "https://reddit-opportunity-engine-production.up.railway.app"
-          }
-        ]
+        ...gumloopPayload,
+        email: email,
+        post_limit: postLimit || "75",
+        category: focus || "",
+        subreddit: subreddit
       };
     }
 
-    const response = await fetch(
-      "https://api.gumloop.com/api/v1/start_pipeline",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.GUMLOOP_BEARER_TOKEN}`,
-        },
-        body: JSON.stringify(gumloopPayload),
-      }
-    );
+    // Build URL with query parameters as shown in the curl example
+    const gumloopUrl = `https://api.gumloop.com/api/v1/start_pipeline?user_id=${userId}&saved_item_id=${savedItemId}`;
+
+    const response = await fetch(gumloopUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GUMLOOP_BEARER_TOKEN}`,
+      },
+      body: JSON.stringify(gumloopPayload),
+    });
 
     if (!response.ok) {
       const errorData = await response.json();
