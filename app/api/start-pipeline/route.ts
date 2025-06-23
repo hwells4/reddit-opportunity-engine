@@ -11,8 +11,17 @@ export async function POST(request: Request) {
       // New comprehensive format from CLI
       gumloopPayload = {
         user_id: body.user_id || "EZUCg1VIYohJJgKgwDTrTyH2sC32",
-        saved_item_id: body.saved_item_id || "jed6MsnPKNGUmh36KgcP65",
-        pipeline_inputs: body.pipeline_inputs
+        saved_item_id: body.saved_item_id || "2VJar3Dimtp46XZzXAzhEZ",
+        pipeline_inputs: [
+          ...body.pipeline_inputs,
+          // Add webhook_base_url for Gumloop pipeline
+          { 
+            input_name: "webhook_base_url", 
+            value: process.env.RAILWAY_PUBLIC_DOMAIN 
+              ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+              : "https://reddit-opportunity-engine-production.up.railway.app"
+          }
+        ]
       };
     } else {
       // Legacy simple format
@@ -27,12 +36,18 @@ export async function POST(request: Request) {
       
       gumloopPayload = {
         user_id: "EZUCg1VIYohJJgKgwDTrTyH2sC32",
-        saved_item_id: "jed6MsnPKNGUmh36KgcP65",
+        saved_item_id: "2VJar3Dimtp46XZzXAzhEZ",
         pipeline_inputs: [
           { input_name: "email", value: email },
           { input_name: "post_limit", value: postLimit || "75" },
           { input_name: "category", value: focus || "" },
           { input_name: "subreddit", value: subreddit },
+          { 
+            input_name: "webhook_base_url", 
+            value: process.env.RAILWAY_PUBLIC_DOMAIN 
+              ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+              : "https://reddit-opportunity-engine-production.up.railway.app"
+          }
         ]
       };
     }
@@ -43,7 +58,7 @@ export async function POST(request: Request) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.GUMLOOP_API_KEY}`,
+          Authorization: `Bearer ${process.env.GUMLOOP_BEARER_TOKEN}`,
         },
         body: JSON.stringify(gumloopPayload),
       }

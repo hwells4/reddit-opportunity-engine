@@ -667,7 +667,7 @@ async function sendToGumloop(
   
   const payload: GumloopWebhookPayload = {
     user_id: process.env.GUMLOOP_USER_ID || 'EZUCg1VIYohJJgKgwDTrTyH2sC32',
-    saved_item_id: process.env.GUMLOOP_SAVED_ITEM_ID || 'dAp1K1b5sXwTLNM8AZbGJZ',
+    saved_item_id: process.env.GUMLOOP_SAVED_ITEM_ID || '2VJar3Dimtp46XZzXAzhEZ',
     pipeline_inputs: [
       { input_name: 'email', value: email },
       { input_name: 'subscribers', value: subscriberCounts.join(';') },
