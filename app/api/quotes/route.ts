@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
       .select('*')
       .eq('run_id', runId)
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1)
-      .order('created_at', { ascending: false })
+      .order('start_time', { ascending: false })
 
     // Filter by post_id if provided
     if (postId) {
@@ -154,7 +154,7 @@ export async function GET(request: NextRequest) {
       .from('quotes')
       .select('*')
       .eq('run_id', runId)
-      .order('created_at', { ascending: false })
+      .order('start_time', { ascending: false })
 
     // Filter by post_id if provided
     if (postId) {
@@ -275,7 +275,7 @@ export async function POST(request: NextRequest) {
       quotesQuery = quotesQuery.ilike('text', `%${search_text}%`)
     }
 
-    const { data: quotes, error: quotesError } = await quotesQuery.order('created_at', { ascending: false })
+    const { data: quotes, error: quotesError } = await quotesQuery
 
     if (quotesError) {
       console.error('Error fetching filtered quotes:', quotesError)

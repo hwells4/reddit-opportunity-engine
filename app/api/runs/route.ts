@@ -62,7 +62,7 @@ async function getAllRuns(userId?: string) {
   let query = getSupabaseClient()
     .from('runs')
     .select('*')
-    .order('created_at', { ascending: false })
+    .order('start_time', { ascending: false })
 
   // Add user filtering for future multi-user support
   if (userId) {
