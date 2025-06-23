@@ -13,7 +13,6 @@
 import * as readline from 'readline'
 import chalk from 'chalk'
 import fetch from 'node-fetch'
-import { getValidatedApiKey } from '../utils/api-key-validation'
 
 interface SubredditCandidate {
   name: string
@@ -60,7 +59,6 @@ interface GumloopWebhookPayload {
 }
 
 const API_BASE = process.env.API_BASE_URL || 'https://reddit-opportunity-engine-production.up.railway.app'
-const GUMLOOP_API_URL = 'https://api.gumloop.com/api/v1/start_pipeline'
 
 // CLI utilities
 const rl = readline.createInterface({
@@ -674,7 +672,7 @@ async function sendToGumloop(
       { input_name: 'email', value: email },
       { input_name: 'subscribers', value: subscriberCounts.join(';') },
       { input_name: 'post_limit', value: postLimit },
-      { input_name: 'name', value: account.contact_name },
+      { input_name: 'name', value: account.company_name },
       { input_name: 'subreddits', value: subredditNames.join(';') },
       { input_name: 'audience', value: request.audience },
       { input_name: 'problem_area', value: request.problem },
@@ -709,21 +707,14 @@ async function sendToGumloop(
     return true
   }
   
-  // Send actual request
+  // Send actual request through Railway proxy
   try {
-    const apiKey = getValidatedApiKey('GUMLOOP_API_KEY')
-    if (!apiKey) {
-      console.log(chalk.red('❌ GUMLOOP_API_KEY not set. Please configure your environment.'))
-      return false
-    }
+    console.log(chalk.blue('🚀 Sending to Gumloop via Railway...'))
     
-    console.log(chalk.blue('🚀 Sending to Gumloop...'))
-    
-    const response = await fetch(GUMLOOP_API_URL, {
+    const response = await fetch(`${API_BASE}/api/start-pipeline`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(payload)
     })

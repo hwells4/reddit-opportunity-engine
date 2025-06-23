@@ -3,13 +3,38 @@ import { NextResponse } from "next/server";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { subreddit, focus, email, postLimit } = body;
-
-    if (!subreddit || !email) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
+    
+    // Handle both old simple format and new comprehensive format
+    let gumloopPayload;
+    
+    if (body.pipeline_inputs) {
+      // New comprehensive format from CLI
+      gumloopPayload = {
+        user_id: body.user_id || "EZUCg1VIYohJJgKgwDTrTyH2sC32",
+        saved_item_id: body.saved_item_id || "jed6MsnPKNGUmh36KgcP65",
+        pipeline_inputs: body.pipeline_inputs
+      };
+    } else {
+      // Legacy simple format
+      const { subreddit, focus, email, postLimit } = body;
+      
+      if (!subreddit || !email) {
+        return NextResponse.json(
+          { error: "Missing required fields: subreddit and email" },
+          { status: 400 }
+        );
+      }
+      
+      gumloopPayload = {
+        user_id: "EZUCg1VIYohJJgKgwDTrTyH2sC32",
+        saved_item_id: "jed6MsnPKNGUmh36KgcP65",
+        pipeline_inputs: [
+          { input_name: "email", value: email },
+          { input_name: "post_limit", value: postLimit || "75" },
+          { input_name: "category", value: focus || "" },
+          { input_name: "subreddit", value: subreddit },
+        ]
+      };
     }
 
     const response = await fetch(
@@ -20,16 +45,7 @@ export async function POST(request: Request) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${process.env.GUMLOOP_API_KEY}`,
         },
-        body: JSON.stringify({
-          user_id: "EZUCg1VIYohJJgKgwDTrTyH2sC32",
-          saved_item_id: "jed6MsnPKNGUmh36KgcP65",
-          pipeline_inputs: [
-            { input_name: "email", value: email },
-            { input_name: "post_limit", value: postLimit || "75" },
-            { input_name: "category", value: focus || "" },
-            { input_name: "subreddit", value: subreddit },
-          ],
-        }),
+        body: JSON.stringify(gumloopPayload),
       }
     );
 
