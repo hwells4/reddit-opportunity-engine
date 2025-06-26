@@ -12,6 +12,13 @@ import {
   generateReportTitleFromLLM,
   createHomepageBlocks
 } from "./notionHelpers";
+import {
+  createQuotesDatabase,
+  addQuotesToNotion,
+  fetchQuotesForRun,
+  getQuoteStats,
+  createQuotesLinkBlock
+} from "./notionQuotesHelpers";
 
 // Initialize Notion client
 const notion = new Client({
@@ -352,6 +359,75 @@ export async function POST(request: Request) {
       children: homepageBlocks,
     });
 
+    // --- Add quotes to Notion if runId is provided ---
+    let quotesResult = null;
+    if (runId) {
+      try {
+        console.log(`Processing quotes for run ${runId}...`);
+        const supabase = getSupabaseClient();
+        
+        if (supabase) {
+          // Fetch quotes for this run
+          const quotes = await fetchQuotesForRun(supabase, runId);
+          
+          if (quotes.length > 0) {
+            console.log(`Found ${quotes.length} quotes, creating dedicated database...`);
+            
+            // Generate database title based on company/run
+            const finalCompanyName = accountData?.company_name || companyName;
+            const quotesDbTitle = `${finalCompanyName} - Quotes Database`;
+            
+            // Create dedicated quotes database as child of branded homepage
+            const quotesDbId = await createQuotesDatabase(
+              notion,
+              brandedHomepage.id,
+              quotesDbTitle
+            );
+            
+            // Add quotes to the dedicated database
+            const addResult = await addQuotesToNotion(
+              notion,
+              quotesDbId,
+              quotes
+            );
+            
+            // Get quote statistics
+            const stats = getQuoteStats(quotes);
+            
+            // Add quotes link block to the homepage
+            const quotesLinkBlocks = createQuotesLinkBlock(
+              `https://notion.so/${quotesDbId.replace(/-/g, '')}`,
+              quotes.length
+            );
+            
+            await notion.blocks.children.append({
+              block_id: brandedHomepage.id,
+              children: quotesLinkBlocks,
+            });
+            
+            quotesResult = {
+              success: addResult.success,
+              count: addResult.count,
+              total: quotes.length,
+              databaseId: quotesDbId,
+              databaseUrl: `https://notion.so/${quotesDbId.replace(/-/g, '')}`,
+              databaseTitle: quotesDbTitle,
+              stats
+            };
+          } else {
+            console.log('No quotes found for this run');
+          }
+        }
+      } catch (quotesError) {
+        console.error('Error processing quotes:', quotesError);
+        // Don't fail the entire request if quotes fail
+        quotesResult = {
+          success: false,
+          error: quotesError instanceof Error ? quotesError.message : 'Unknown error'
+        };
+      }
+    }
+
     debugLog('strategyReport-preview', strategyReport?.slice(0, 500));
     debugLog('comprehensiveReport-preview', comprehensiveReport?.slice(0, 500));
 
@@ -362,7 +438,9 @@ export async function POST(request: Request) {
         ...results,
         // Share the branded homepage URL with clients
         shareableUrl: results.brandedHomepageUrl,
-        note: "Use shareableUrl for clean client presentation with branded homepage"
+        note: "Use shareableUrl for clean client presentation with branded homepage",
+        // Include quotes result if available
+        quotes: quotesResult
       },
       debug: {
         strategyReport: strategyReport?.slice(0, 1000),

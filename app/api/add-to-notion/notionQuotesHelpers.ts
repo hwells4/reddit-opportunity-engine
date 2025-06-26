@@ -2,42 +2,22 @@
 import { Client } from "@notionhq/client";
 
 /**
- * Create or get the central quotes database in Notion
- * This database will store all quotes across all runs/clients
+ * Create a dedicated quotes database for a specific run
+ * Each run gets its own database for clean client presentation
  */
-export async function createOrGetQuotesDatabase(notion: Client, parentPageId?: string): Promise<string> {
+export async function createQuotesDatabase(
+  notion: Client, 
+  parentPageId: string,
+  title: string
+): Promise<string> {
   try {
-    // First, try to find existing quotes database
-    const response = await notion.search({
-      query: "Quotes Database",
-      filter: {
-        value: "database",
-        property: "object"
-      }
-    });
-
-    // If database exists, return its ID
-    if (response.results.length > 0) {
-      const existingDb = response.results.find((db: any) => 
-        db.object === 'database' && db.title?.[0]?.plain_text === 'Quotes Database'
-      );
-      if (existingDb) {
-        console.log('Found existing quotes database:', existingDb.id);
-        return existingDb.id;
-      }
-    }
-
-    // Create new database if it doesn't exist
-    console.log('Creating new quotes database...');
+    console.log(`Creating quotes database: ${title}`);
     const newDatabase = await notion.databases.create({
-      parent: parentPageId ? { page_id: parentPageId } : { 
-        type: "workspace" as const,
-        workspace: true 
-      },
+      parent: { page_id: parentPageId },
       title: [
         {
           type: "text",
-          text: { content: "Quotes Database" }
+          text: { content: title }
         }
       ],
       icon: {
@@ -47,12 +27,6 @@ export async function createOrGetQuotesDatabase(notion: Client, parentPageId?: s
       properties: {
         "Quote": {
           title: {}
-        },
-        "Run ID": {
-          rich_text: {}
-        },
-        "Company": {
-          rich_text: {}
         },
         "Category": {
           select: {
@@ -105,31 +79,24 @@ export async function createOrGetQuotesDatabase(notion: Client, parentPageId?: s
         "Date Added": {
           date: {}
         },
-        "Contact Email": {
-          email: {}
-        },
         "Post ID": {
           rich_text: {}
         }
       }
     });
 
-    console.log('Created new quotes database:', newDatabase.id);
+    console.log('Created quotes database:', newDatabase.id);
     return newDatabase.id;
   } catch (error) {
-    console.error('Error creating/getting quotes database:', error);
+    console.error('Error creating quotes database:', error);
     throw error;
   }
 }
 
 /**
- * Format a quote from our database to Notion properties
+ * Format a quote from our database to Notion properties (simplified for individual databases)
  */
-export function formatQuoteForNotion(quote: any, runData: {
-  runId: string;
-  companyName: string;
-  email?: string;
-}): any {
+export function formatQuoteForNotion(quote: any): any {
   // Extract Reddit URL from the post if available
   const redditUrl = quote.post?.url || `https://reddit.com/r/${quote.post?.subreddit || 'unknown'}`;
   
@@ -140,12 +107,6 @@ export function formatQuoteForNotion(quote: any, runData: {
           text: { content: quote.text || "No quote text" }
         }
       ]
-    },
-    "Run ID": {
-      rich_text: [{ text: { content: runData.runId } }]
-    },
-    "Company": {
-      rich_text: [{ text: { content: runData.companyName } }]
     },
     "Category": {
       select: { name: quote.category || "general" }
@@ -165,9 +126,6 @@ export function formatQuoteForNotion(quote: any, runData: {
     "Date Added": {
       date: { start: quote.inserted_at || new Date().toISOString() }
     },
-    "Contact Email": {
-      email: runData.email || null
-    },
     "Post ID": {
       rich_text: [{ text: { content: quote.post_id || "" } }]
     }
@@ -175,18 +133,13 @@ export function formatQuoteForNotion(quote: any, runData: {
 }
 
 /**
- * Add quotes to the Notion database
+ * Add quotes to the individual run's Notion database
  * Handles batching to respect Notion's API limits
  */
 export async function addQuotesToNotion(
   notion: Client,
   databaseId: string,
-  quotes: any[],
-  runData: {
-    runId: string;
-    companyName: string;
-    email?: string;
-  }
+  quotes: any[]
 ): Promise<{ success: boolean; count: number; errors: any[] }> {
   const results = {
     success: true,
@@ -202,7 +155,7 @@ export async function addQuotesToNotion(
     // Process each quote in the batch
     const promises = batch.map(async (quote) => {
       try {
-        const properties = formatQuoteForNotion(quote, runData);
+        const properties = formatQuoteForNotion(quote);
         
         await notion.pages.create({
           parent: { database_id: databaseId },
@@ -233,51 +186,10 @@ export async function addQuotesToNotion(
 }
 
 /**
- * Create a filtered view of quotes for a specific run
- * Returns a link to the filtered database view
+ * Create a simple link block to the dedicated quotes database
+ * No filtering needed since each database is already for one specific run
  */
-export async function createQuotesViewLink(
-  databaseId: string,
-  runId: string,
-  companyName: string
-): Promise<string> {
-  // Notion doesn't allow creating filtered views via API
-  // Instead, we'll return a properly formatted filter URL
-  const baseUrl = `https://notion.so/${databaseId.replace(/-/g, '')}`;
-  
-  // URL encode the filter parameters
-  const filterParams = encodeURIComponent(JSON.stringify({
-    "filter": {
-      "property": "Run ID",
-      "rich_text": {
-        "equals": runId
-      }
-    }
-  }));
-  
-  // Note: This URL format may not work perfectly due to Notion's URL structure
-  // In practice, users will need to apply the filter manually
-  return baseUrl;
-}
-
-/**
- * Create an embedded quotes table block for the report page
- * This adds a linked database view filtered to show only quotes for the current run
- */
-export function createQuotesTableBlock(databaseId: string, runId: string): any {
-  return {
-    type: "child_database",
-    child_database: {
-      title: `Quotes from this Analysis`,
-      children: [] // Notion will populate this
-    }
-  };
-}
-
-/**
- * Create a simple link block to the quotes database with instructions
- */
-export function createQuotesLinkBlock(databaseUrl: string, runId: string, quotesCount: number): any[] {
+export function createQuotesLinkBlock(databaseUrl: string, quotesCount: number): any[] {
   return [
     {
       type: "divider",
@@ -304,13 +216,13 @@ export function createQuotesLinkBlock(databaseUrl: string, runId: string, quotes
           },
           {
             text: { 
-              content: "View all quotes in the database",
+              content: "View the complete quotes database",
               link: { url: databaseUrl }
             }
           },
           {
             text: { 
-              content: ` and filter by Run ID: "${runId}" to see quotes specific to this report.` 
+              content: " to explore all insights, filter by category or sentiment, and analyze patterns." 
             }
           }
         ]
@@ -323,18 +235,7 @@ export function createQuotesLinkBlock(databaseUrl: string, runId: string, quotes
         rich_text: [
           {
             text: { 
-              content: "Tip: In the quotes database, use the filter option to show only quotes from this run by filtering 'Run ID' equals '" 
-            }
-          },
-          {
-            text: { 
-              content: runId,
-              annotations: { code: true }
-            }
-          },
-          {
-            text: { 
-              content: "'. You can also group by Category or Sentiment to analyze patterns." 
+              content: "💡 Use the database views to group quotes by Category (user needs, pain points, etc.) or Sentiment (positive, frustrated, etc.) for deeper analysis." 
             }
           }
         ]

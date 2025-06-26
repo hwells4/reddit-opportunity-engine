@@ -1,4 +1,4 @@
-def function(meta, strategy):
+def function(meta, strategy, run_id):
 
     import requests
     import time
@@ -8,7 +8,7 @@ def function(meta, strategy):
     
     # Set default values since we don't have metadata
     email = 'harrison@dododigital.ai'
-    run_id = f"gumloop-multi-community-{time.time()}"
+    # Use the run_id parameter passed to the function
     
     # Both meta and strategy are markdown reports
     # meta = comprehensive report (8-10 pages)
