@@ -16,6 +16,7 @@ import {
   createQuotesDatabase,
   addQuotesToNotion,
   fetchQuotesForRun,
+  fetchRunStatistics,
   getQuoteStats,
   createQuotesLinkBlock
 } from "./notionQuotesHelpers";
@@ -326,6 +327,19 @@ export async function POST(request: Request) {
       });
     }
 
+    // --- Fetch run statistics for display ---
+    let runStats = { postsCount: 0, quotesCount: 0 };
+    if (runId) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          runStats = await fetchRunStatistics(supabase, runId);
+        }
+      } catch (error) {
+        console.error('Error fetching run statistics:', error);
+      }
+    }
+
     // --- Build homepage blocks - Clean AI-generated content only ---
     const homepageBlocks: any[] = [
       // Title using AI-generated smart title
@@ -339,6 +353,20 @@ export async function POST(request: Request) {
         paragraph: { rich_text: [{ text: { content: `Hey ${contactName} and the rest of the ${companyName} team!` } }] }
       },
       { type: "divider", divider: {} },
+      // Analysis Summary Stats
+      ...(runId && runStats.postsCount > 0 ? [{
+        type: "callout",
+        callout: {
+          icon: { type: "emoji", emoji: "📈" },
+          rich_text: [
+            {
+              text: { 
+                content: `Analysis Summary: We reviewed ${runStats.postsCount} posts and extracted ${runStats.quotesCount} valuable quotes for this research.` 
+              }
+            }
+          ]
+        }
+      }] : []),
       // AI-Generated Intro/Summary - Parse as markdown
       ...(homepageIntro ? [
         ...createBlocksFromMarkdown(homepageIntro)
@@ -397,6 +425,7 @@ export async function POST(request: Request) {
             // Add quotes link block to the homepage
             const quotesLinkBlocks = createQuotesLinkBlock(
               `https://notion.so/${quotesDbId.replace(/-/g, '')}`,
+              runStats.postsCount,
               quotes.length
             );
             

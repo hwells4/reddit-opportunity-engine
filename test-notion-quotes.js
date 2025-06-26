@@ -70,10 +70,11 @@ async function testQuotesEndpoint() {
   console.log('\n3️⃣ Testing full add-to-notion flow with quotes...');
   console.log('   This would test the complete flow:');
   console.log('   - Creating reports in Notion');
-  console.log('   - Fetching quotes from database');
+  console.log('   - Fetching run statistics (posts + quotes count)');
+  console.log('   - Displaying analysis summary in callout block');
   console.log('   - Creating dedicated quotes database per run');
   console.log('   - Adding quotes to individual database');
-  console.log('   - Adding quotes link to branded homepage');
+  console.log('   - Adding quotes link with post/quote counts to branded homepage');
   console.log('   ⚠️  Requires valid reports and Notion API key');
 
   console.log('\n✅ Test script complete!');
@@ -81,8 +82,8 @@ async function testQuotesEndpoint() {
   console.log('1. Ensure NOTION_API_KEY is set in environment');
   console.log('2. Run a discovery flow to generate quotes');
   console.log('3. Use the add-to-notion endpoint with a valid runId');
-  console.log('4. Check the branded homepage for the dedicated quotes database');
-  console.log('5. Each run gets its own quotes database - no filtering needed!');
+  console.log('4. Check the branded homepage for the analysis summary and quotes database');
+  console.log('5. Each run gets its own quotes database with post/quote counts displayed!');
 }
 
 // Helper function to test quote statistics

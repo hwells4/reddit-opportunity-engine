@@ -189,7 +189,11 @@ export async function addQuotesToNotion(
  * Create a simple link block to the dedicated quotes database
  * No filtering needed since each database is already for one specific run
  */
-export function createQuotesLinkBlock(databaseUrl: string, quotesCount: number): any[] {
+export function createQuotesLinkBlock(
+  databaseUrl: string, 
+  postsCount: number, 
+  quotesCount: number
+): any[] {
   return [
     {
       type: "divider",
@@ -211,7 +215,7 @@ export function createQuotesLinkBlock(databaseUrl: string, quotesCount: number):
         rich_text: [
           {
             text: { 
-              content: `We extracted ${quotesCount} quotes from this analysis. ` 
+              content: `We analyzed ${postsCount} posts and extracted ${quotesCount} valuable quotes from this research. ` 
             }
           },
           {
@@ -271,6 +275,69 @@ export async function fetchQuotesForRun(supabase: any, runId: string): Promise<a
   } catch (error) {
     console.error('Failed to fetch quotes for run:', error);
     return [];
+  }
+}
+
+/**
+ * Fetch post count for a specific run from Supabase
+ */
+export async function fetchPostCountForRun(supabase: any, runId: string): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('posts')
+      .select('*', { count: 'exact', head: true })
+      .eq('run_id', runId);
+
+    if (error) {
+      console.error('Error fetching post count:', error);
+      return 0;
+    }
+
+    return count || 0;
+  } catch (error) {
+    console.error('Failed to fetch post count for run:', error);
+    return 0;
+  }
+}
+
+/**
+ * Fetch run statistics (posts and quotes count)
+ */
+export async function fetchRunStatistics(supabase: any, runId: string): Promise<{
+  postsCount: number;
+  quotesCount: number;
+}> {
+  try {
+    // Fetch posts count
+    const { count: postsCount, error: postsError } = await supabase
+      .from('posts')
+      .select('*', { count: 'exact', head: true })
+      .eq('run_id', runId);
+
+    if (postsError) {
+      console.error('Error fetching posts count:', postsError);
+    }
+
+    // Fetch quotes count
+    const { count: quotesCount, error: quotesError } = await supabase
+      .from('quotes')
+      .select('*', { count: 'exact', head: true })
+      .eq('run_id', runId);
+
+    if (quotesError) {
+      console.error('Error fetching quotes count:', quotesError);
+    }
+
+    return {
+      postsCount: postsCount || 0,
+      quotesCount: quotesCount || 0
+    };
+  } catch (error) {
+    console.error('Failed to fetch run statistics:', error);
+    return {
+      postsCount: 0,
+      quotesCount: 0
+    };
   }
 }
 
