@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "subtext": "npx tsx scripts/subtext-v1.ts",
+    "subtext-dev": "tsx scripts/subtext-dev.ts",
     "reddit-search": "cd services/reddit_discovery_agent && docker-compose stop && docker-compose rm -f && docker network disconnect -f reddit_discovery_agent_default $(docker ps -q) 2>/dev/null || true && docker-compose down --remove-orphans && docker-compose run --rm reddit-discovery-agent",
     "reddit-search-mvp": "cd services/reddit_discovery_agent && ./start_mvp_with_enhanced.sh",
     "reddit-search-mvp-docker": "cd services/reddit_discovery_agent && docker-compose stop && docker-compose rm -f && docker network disconnect -f reddit_discovery_agent_default $(docker ps -q) 2>/dev/null || true && docker-compose down --remove-orphans && docker-compose run --rm reddit-discovery-agent python mvp_flow.py"

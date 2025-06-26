@@ -661,9 +661,34 @@ async function sendToGumloop(
 ): Promise<boolean> {
   displaySection('Gumloop Analysis')
   
+  // Filter out any subreddits with zero or invalid subscribers
+  const validSubreddits = selectedSubreddits.filter(sub => {
+    if (!sub.subscribers || sub.subscribers <= 0) {
+      console.log(chalk.yellow(`⚠️ Skipping r/${sub.name} - invalid subscriber count: ${sub.subscribers}`))
+      return false
+    }
+    return true
+  })
+  
+  if (validSubreddits.length === 0) {
+    console.log(chalk.red('❌ No valid subreddits with positive subscriber counts found!'))
+    return false
+  }
+  
+  if (validSubreddits.length !== selectedSubreddits.length) {
+    console.log(chalk.yellow(`⚠️ Filtered out ${selectedSubreddits.length - validSubreddits.length} subreddits with invalid subscriber counts`))
+  }
+  
   // Prepare subreddit data
-  const subredditNames = selectedSubreddits.map(sub => sub.name)
-  const subscriberCounts = selectedSubreddits.map(sub => sub.subscribers.toString())
+  const subredditNames = validSubreddits.map(sub => sub.name)
+  const subscriberCounts = validSubreddits.map(sub => sub.subscribers.toString())
+  
+  // Final validation - ensure arrays are exactly the same length
+  if (subredditNames.length !== subscriberCounts.length) {
+    console.log(chalk.red('❌ Critical error: Subreddit and subscriber arrays have different lengths!'))
+    console.log(chalk.red(`   Subreddits: ${subredditNames.length}, Subscribers: ${subscriberCounts.length}`))
+    return false
+  }
   
   const payload: GumloopWebhookPayload = {
     user_id: process.env.GUMLOOP_USER_ID || 'EZUCg1VIYohJJgKgwDTrTyH2sC32',

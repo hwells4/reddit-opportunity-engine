@@ -243,6 +243,308 @@ curl -X POST /api/accounts/[id]/usage \
 - **Gumloop Compatibility**: Only change is company name in 'name' field
 - **Search Optimized**: CLI search designed for fast company/contact/email lookup
 
+# Notion Quotes Integration System
+
+## Overview
+Comprehensive quotes database system that automatically exposes all captured quotes to clients through individual Notion databases with detailed analysis metrics.
+
+## Core Architecture
+
+### Individual Database Approach
+- **Each run gets its own quotes database** - perfect client isolation
+- **Created as child of branded homepage** - easy access and organization
+- **No filtering required** - clients only see their relevant quotes
+- **Rich metadata exposure** - category, sentiment, theme, relevance scores
+
+### Automatic Integration
+- **Triggered by runId presence** in add-to-notion API calls
+- **Non-breaking implementation** - quote failures don't affect report creation
+- **Analysis metrics prominently displayed** - posts analyzed and quotes extracted counts
+- **Seamlessly integrated** with existing Gumloop webhook workflow
+
+## Key Endpoints
+
+#### `/api/add-to-notion` (Enhanced)
+- **Automatic quotes integration** when `runId` provided
+- **Analysis summary callout** showing post/quote counts
+- **Dedicated database creation** as child of branded homepage
+- **Enhanced response** includes quotes database information
+
+#### `/api/add-to-notion/quotes` (Standalone)
+- `POST` - Manually create quotes database for a run
+- `GET` - Preview quotes and statistics for a run
+- **Account integration** - fetches company names from accounts table
+- **Batch processing** with rate limiting for large quote volumes
+
+## Database Schema (Per Run)
+```javascript
+{
+  "Quote": title,              // The quote text (searchable)
+  "Category": select,          // user_needs, user_language, feature_signals, etc.
+  "Sentiment": select,         // positive, negative, neutral, frustrated, etc.
+  "Theme": select,            // general, user_feedback, pain_point, etc.
+  "Reddit Link": url,         // Direct link to source post
+  "Relevance Score": number,  // 0.0 to 1.0 scoring
+  "Date Added": date,         // When quote was captured
+  "Post ID": rich_text        // Reference to source post
+}
+```
+
+## User Experience
+
+### What Clients See
+1. **Analysis Summary Callout**: "📈 Analysis Summary: We reviewed 45 posts and extracted 127 valuable quotes for this research."
+2. **Quotes Database Link**: "We analyzed 45 posts and extracted 127 valuable quotes from this research. View the complete quotes database..."
+3. **Dedicated Database**: Full sortable/filterable table with all quotes and metadata
+4. **Built-in Notion Views**: Group by Category, Sentiment, Theme for analysis
+
+### Database Features
+- **Perfect Isolation**: Only quotes from their specific run
+- **Rich Sorting**: By relevance score, date, category, sentiment
+- **Powerful Filtering**: Notion's native filter system for deep analysis
+- **Export Capable**: Clients can export data in various formats
+- **Link Integration**: Direct links back to source Reddit posts
+
+## Implementation Files
+
+### Core Modules
+- **`notionQuotesHelpers.ts`** - All quote database functionality
+- **`quotes/route.ts`** - Standalone quotes API endpoints
+- **Enhanced main route** - Automatic integration with reports
+
+### Key Functions
+- `fetchRunStatistics()` - Gets post and quote counts for metrics display
+- `createQuotesDatabase()` - Creates individual database per run
+- `addQuotesToNotion()` - Batch processes quotes with rate limiting
+- `createQuotesLinkBlock()` - Generates formatted homepage links with counts
+
+## Workflow Integration
+
+### Gumloop Pipeline
+1. **Posts processed** and quotes extracted (existing)
+2. **Webhook calls** add-to-notion with `runId` (existing)
+3. **Reports created** in Notion (existing)
+4. **Run statistics fetched** - post and quote counts (new)
+5. **Analysis summary displayed** on homepage (new)
+6. **Quotes database created** as child page (new)
+7. **All quotes added** with full metadata (new)
+8. **Homepage updated** with quotes link and metrics (new)
+
+### Benefits for Users
+- **Immediate understanding** of analysis scope through metrics
+- **Direct access** to all extracted insights in organized format
+- **Professional presentation** with no setup or filtering required
+- **Data ownership** - clients can export and analyze independently
+- **Rich metadata** for deeper analysis and insights discovery
+
+## Performance & Scalability
+- **No API limitations** - individual databases avoid filtering constraints
+- **Notion confirmed** no limits on database creation
+- **Rate limiting handled** - batch processing prevents API throttling
+- **Error resilient** - quote processing failures don't break reports
+- **Resource efficient** - only relevant data per database
+
+# Webhook Resend & A/B Testing System
+
+## Overview
+Comprehensive webhook management system for resending failed webhooks and A/B testing across multiple Gumloop workflows. Enables quick iteration and testing without re-running full discovery processes.
+
+## Core Architecture
+
+### Database Enhancement
+```sql
+-- Webhook payload storage (migration 002)
+ALTER TABLE runs ADD COLUMN webhook_payload JSONB;
+ALTER TABLE runs ADD COLUMN webhook_sent_at TIMESTAMP;
+ALTER TABLE runs ADD COLUMN webhook_response JSONB;
+
+-- Gumloop workflows management (migration 003)
+CREATE TABLE gumloop_workflows (
+  workflow_id UUID PRIMARY KEY,
+  workflow_name TEXT NOT NULL,
+  workflow_url TEXT NOT NULL,
+  description TEXT,
+  user_id TEXT,
+  saved_item_id TEXT,
+  is_active BOOLEAN DEFAULT true
+);
+```
+
+### Key API Endpoints
+
+#### `/api/workflows` - Workflow Management
+- **POST** `/api/workflows` - Save new Gumloop workflow URL with friendly name
+- **GET** `/api/workflows` - List all saved workflows
+- **GET** `/api/workflows?search=term` - Search workflows by name/description
+- **PUT** `/api/workflows?workflow_id=X` - Update existing workflow
+- **Auto-extracts** user_id and saved_item_id from Gumloop URLs
+
+#### `/api/webhooks/resend` - Webhook Resending & A/B Testing
+- **GET** `/api/webhooks/resend?run_id=X` - View stored webhook data
+- **POST** `/api/webhooks/resend` - Resend webhook with modifications or A/B test
+
+**Two main use cases:**
+1. **Resend Failed Webhook**: Fix and resend to original or specified workflow
+2. **A/B Test**: Send identical webhook to multiple Gumloop workflows
+
+#### `/api/start-pipeline` - Enhanced Webhook Storage
+- **Automatic storage** of webhook payloads after successful Gumloop send
+- **Non-blocking** - storage failures don't affect webhook sending
+- **Comprehensive validation** - array length matching, zero subscriber prevention
+
+## CLI Tools
+
+### `subtext-dev.ts` - Unified Development Tool
+```bash
+npm run subtext-dev
+```
+
+**Main Functions:**
+1. **🆕 Create Gumloop Workflow** - Save workflow URLs with friendly names
+2. **🔄 Resend Failed Webhook** - Fix and resend with optional modifications  
+3. **🧪 A/B Test Webhook** - Test across multiple saved workflows
+
+### `subtext-v1.ts` - Main Discovery Workflow (unchanged)
+```bash
+npm run subtext
+```
+
+## Workflow Management Features
+
+### Save Gumloop Workflows
+- **Paste any Gumloop URL**: Auto-extracts user_id and saved_item_id
+- **Friendly names**: "Production v1", "New Experiment", "Testing Flow"
+- **Descriptions**: Optional context for each workflow
+- **Search & reuse**: Find workflows quickly by name
+
+### Example Workflow Storage
+```json
+{
+  "workflow_name": "Production v1",
+  "workflow_url": "https://api.gumloop.com/api/v1/start_pipeline?user_id=ABC&saved_item_id=XYZ",
+  "description": "Current production workflow",
+  "user_id": "ABC",
+  "saved_item_id": "XYZ"
+}
+```
+
+## Webhook Resending Features
+
+### Automatic Payload Storage
+- **Triggered after successful webhook send** in `/api/start-pipeline`
+- **Stores**: Original request body, timestamp, Gumloop response
+- **Safe updates**: Only touches webhook fields, preserves all run data
+
+### Resend Capabilities
+- **Direct modifications**: Change specific fields (post_limit, subreddits, etc.)
+- **AI-assisted modifications**: Natural language requests ("reduce post limit to 50")
+- **Validation**: All original validations apply (array lengths, zero subscribers)
+- **Unique run IDs**: Each resend gets tracking ID like `original-resend-timestamp`
+
+### A/B Testing Features
+- **Multiple workflows**: Send identical payload to different Gumloop workflows
+- **Direct to Gumloop**: Bypasses start-pipeline, sends directly to workflow URLs
+- **Result comparison**: Shows success/failure for each workflow tested
+- **Unique tracking**: Each test gets ID like `original-resend-workflow-name`
+
+## Example A/B Test Response
+```json
+{
+  "success": true,
+  "original_run_id": "abc123",
+  "test_results": [
+    {
+      "workflow_name": "Production v1", 
+      "run_id": "abc123-resend-production-v1",
+      "success": true,
+      "response": {"tracking_url": "https://gumloop.com/track/xyz"}
+    },
+    {
+      "workflow_name": "Experimental v2",
+      "run_id": "abc123-resend-experimental-v2", 
+      "success": true,
+      "response": {"tracking_url": "https://gumloop.com/track/abc"}
+    }
+  ],
+  "summary": {
+    "total_workflows": 2,
+    "successful": 2,
+    "failed": 0
+  }
+}
+```
+
+## Validation Enhancements
+
+### Webhook Payload Validation
+- **Array length matching**: Subreddits and subscribers arrays must have same count
+- **Zero subscriber prevention**: No subreddits with zero or negative subscribers
+- **Invalid data filtering**: Removes invalid entries before sending
+- **Detailed error logging**: Comprehensive error tracking for debugging
+
+### CLI Pre-validation
+- **Filters invalid subreddits** before webhook creation
+- **Double-checks array consistency** 
+- **User warnings** for filtered subreddits
+- **Prevents sending** if no valid subreddits remain
+
+## Scripts Cleanup
+**Removed redundant files:**
+- `webhook-manager.ts` → Replaced by `subtext-dev.ts`
+- `resend-webhook.ts` → Replaced by `subtext-dev.ts`
+- `test-webhook-resend.js` → Examples only
+- `test-webhook-validation.js` → Validation built into API
+
+**Remaining scripts:**
+- `subtext-v1.ts` - Main discovery workflow
+- `subtext-dev.ts` - Development & testing tool
+
+## Use Cases
+
+### 1. Fix Failed Webhooks
+```bash
+npm run subtext-dev
+# Choose option 2: Resend failed webhook
+# Enter run_id, optionally modify fields
+# Webhook resent with fixes
+```
+
+### 2. Test New Gumloop Workflows
+```bash
+npm run subtext-dev  
+# Choose option 1: Create workflow
+# Paste new Gumloop URL, give it a name
+# Choose option 3: A/B test 
+# Select old and new workflows, compare results
+```
+
+### 3. Compare System Versions
+- Save "Production v1" and "Staging v2" workflow URLs
+- A/B test identical webhook against both
+- Compare tracking URLs and results
+- Perfect for testing system upgrades
+
+## Benefits
+
+### For Development
+- **Quick iteration**: Test changes without full discovery runs
+- **A/B testing**: Compare different Gumloop workflows with identical data
+- **Debugging**: Easy webhook modification and resending
+- **Validation**: Prevents common webhook failures
+
+### For Business
+- **Workflow versioning**: Save and name different Gumloop setups
+- **Quality assurance**: Test new workflows before production
+- **Error recovery**: Quick fixes for failed webhooks
+- **Performance comparison**: Measure different workflow effectiveness
+
+## Technical Notes
+- **Supabase integration**: Uses existing database connection patterns
+- **Railway deployment**: Automatically connects to production environment
+- **OpenAI integration**: AI-assisted webhook modifications via GPT-4o-mini
+- **Error resilience**: Comprehensive error handling and validation
+- **Rate limiting**: Respects Gumloop API limits
+
 # Pending Code Cleanup Tasks
 
 ## From CODE_CLEANUP_ANALYSIS.md (to be completed)
