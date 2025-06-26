@@ -24,20 +24,46 @@ def function(analyzed_posts_list, run_id, subreddit_name, webhook_base_url):
             post_id = analyzed_post.get("post_id", "")
             analysis_response = analyzed_post.get("response", "")
             
-            # Create post payload with the pre-existing analysis
+            # Enhanced data extraction with better null handling
+            def get_non_empty_value(key, default=None):
+                """Get value from analyzed_post, but only if it's not empty/null"""
+                value = analyzed_post.get(key, default)
+                if value is None or (isinstance(value, str) and value.strip() == ""):
+                    return default
+                return value
+            
+            # Create post payload with enhanced data validation
             post_payload = {
                 "post_id": post_id,
                 "subreddit": subreddit_name,
-                "url": analyzed_post.get("url", ""),
-                "title": analyzed_post.get("title", ""),
-                "body": analyzed_post.get("body", ""),
-                "author": analyzed_post.get("author", ""),
+                # Only include URL if it's not empty - let database preserve existing if needed
+                "url": get_non_empty_value("url"),
+                # Only include title if it's not empty - let database preserve existing if needed  
+                "title": get_non_empty_value("title"),
+                # Only include body if it's not empty - let database preserve existing if needed
+                "body": get_non_empty_value("body"),
+                # Comments handling - try to get meaningful comments data
+                "comments": get_non_empty_value("comments") or get_non_empty_value("comment_content"),
+                "author": get_non_empty_value("author"),
                 "created_utc": analyzed_post.get("created_utc", 0),
                 "score": analyzed_post.get("score", 0),
                 "num_comments": analyzed_post.get("num_comments", 0),
                 "upvote_ratio": analyzed_post.get("upvote_ratio", 0.0),
                 "raw_analysis": analysis_response  # This contains the XML analysis from previous Gumloop step
             }
+            
+            # Log warning if critical fields are missing
+            missing_fields = []
+            if not post_payload["title"]:
+                missing_fields.append("title")
+            if not post_payload["body"]:
+                missing_fields.append("body")
+            if not post_payload["url"]:
+                missing_fields.append("url")
+                
+            if missing_fields:
+                print(f"⚠️ Post {post_id} missing fields: {', '.join(missing_fields)} - database will preserve existing data if available")
+            
             formatted_posts.append(post_payload)
         
         # Prepare webhook payload for process endpoint

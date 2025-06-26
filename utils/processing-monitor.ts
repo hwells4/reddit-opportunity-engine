@@ -14,6 +14,11 @@ interface ProcessingMetrics {
   }
   errorBreakdown: Record<string, number>
   fallbackUsage: Record<string, number>
+  dataPreservation: {
+    postsWithDataPreserved: number    // Number of posts where existing data was preserved
+    fieldsPreserved: Record<string, number>  // Count of each field type preserved (title, body, comments)
+    overwriteWarnings: number         // Number of times we overwrote existing data
+  }
   commonFailurePatterns: string[]
   averageQuotesPerPost: number
   timestamp: string
@@ -34,12 +39,42 @@ export class ProcessingMonitor {
     successRates: { posts: 0, quotes: 0, overall: 0 },
     errorBreakdown: {},
     fallbackUsage: {},
+    dataPreservation: {
+      postsWithDataPreserved: 0,
+      fieldsPreserved: {},
+      overwriteWarnings: 0
+    },
     commonFailurePatterns: [],
     averageQuotesPerPost: 0,
     timestamp: new Date().toISOString()
   }
 
   private static failurePatterns: Map<string, FailurePattern> = new Map()
+
+  /**
+   * Record data preservation event (when existing data is preserved)
+   */
+  static recordDataPreservation(data: {
+    postId: string
+    fieldsPreserved: string[]  // 'title', 'body', 'comments'
+    wasOverwrite?: boolean
+  }) {
+    if (data.fieldsPreserved.length > 0) {
+      this.metrics.dataPreservation.postsWithDataPreserved++
+      
+      // Track which fields are being preserved
+      for (const field of data.fieldsPreserved) {
+        this.metrics.dataPreservation.fieldsPreserved[field] = 
+          (this.metrics.dataPreservation.fieldsPreserved[field] || 0) + 1
+      }
+    }
+    
+    if (data.wasOverwrite) {
+      this.metrics.dataPreservation.overwriteWarnings++
+    }
+    
+    console.log(`[DataPreservation] Post ${data.postId}: preserved ${data.fieldsPreserved.join(', ')}`)
+  }
 
   /**
    * Record metrics from a processing run
@@ -165,6 +200,11 @@ export class ProcessingMonitor {
       successRates: { posts: 0, quotes: 0, overall: 0 },
       errorBreakdown: {},
       fallbackUsage: {},
+      dataPreservation: {
+        postsWithDataPreserved: 0,
+        fieldsPreserved: {},
+        overwriteWarnings: 0
+      },
       commonFailurePatterns: [],
       averageQuotesPerPost: 0,
       timestamp: new Date().toISOString()

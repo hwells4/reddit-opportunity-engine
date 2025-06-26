@@ -388,26 +388,155 @@ class QuoteExtractor {
   }
 }
 
+class DataValidator {
+  /**
+   * Check if a value contains meaningful content (not null, undefined, empty, or whitespace-only)
+   */
+  static hasContent(value: any): boolean {
+    return value !== null && value !== undefined && 
+           typeof value === 'string' && value.trim().length > 0;
+  }
+
+  /**
+   * Validate post data and log warnings for potentially problematic data
+   */
+  static validatePostData(post: any, postId: string): string[] {
+    const warnings: string[] = [];
+    
+    if (!this.hasContent(post.title)) {
+      warnings.push(`Post ${postId}: title is empty or null`);
+    }
+    
+    if (!this.hasContent(post.body)) {
+      warnings.push(`Post ${postId}: body is empty or null`);
+    }
+    
+    if (!this.hasContent(post.comments)) {
+      warnings.push(`Post ${postId}: comments is empty or null`);
+    }
+    
+    if (!this.hasContent(post.url)) {
+      warnings.push(`Post ${postId}: url is empty or null`);
+    }
+    
+    if (!this.hasContent(post.subreddit)) {
+      warnings.push(`Post ${postId}: subreddit is empty or null`);
+    }
+    
+    // Check for suspiciously short content that might indicate extraction issues
+    if (this.hasContent(post.title) && post.title.trim().length < 10) {
+      warnings.push(`Post ${postId}: title suspiciously short (${post.title.length} chars)`);
+    }
+    
+    if (this.hasContent(post.body) && post.body.trim().length < 20) {
+      warnings.push(`Post ${postId}: body suspiciously short (${post.body.length} chars)`);
+    }
+    
+    return warnings;
+  }
+}
+
 class DatabaseService {
   static async insertPost(post: any, runId: string): Promise<{ success: boolean, error?: ProcessingError }> {
     try {
+      // Validate incoming post data and log warnings
+      const validationWarnings = DataValidator.validatePostData(post, post.post_id);
+      if (validationWarnings.length > 0) {
+        console.warn(`⚠️ Data validation warnings for post ${post.post_id}:`, validationWarnings);
+      }
+
       const relevanceScore = AnalysisParser.extractRelevanceScore(post.raw_analysis);
       const classification = AnalysisParser.extractContentClassification(post.raw_analysis);
       
+      // First, check if this post already exists to avoid overwriting good data with empty values
+      const { data: existingPost } = await getSupabaseClient()
+        .from('posts')
+        .select('post_id, title, body, comments')
+        .eq('post_id', post.post_id)
+        .single();
+
+      // Build the update object, preserving existing data when new data is empty/null
+      const updateData: any = {
+        post_id: post.post_id,
+        subreddit: post.subreddit || null,
+        url: post.url || null,
+        relevance_score: relevanceScore,
+        classification_justification: classification,
+        run_id: runId,
+        created_utc: post.created_utc ? new Date(post.created_utc) : null
+      };
+
+      // Smart field updates: only overwrite if we have actual content
+      if (existingPost) {
+        // Track data preservation for monitoring
+        const fieldsPreserved: string[] = [];
+        const willOverwrite: string[] = [];
+        
+        // Title: keep existing if new is empty/null, otherwise update
+        if (DataValidator.hasContent(post.title)) {
+          updateData.title = post.title;
+          if (DataValidator.hasContent(existingPost.title) && existingPost.title !== post.title) {
+            willOverwrite.push(`title: "${existingPost.title}" -> "${post.title}"`);
+          }
+        } else if (DataValidator.hasContent(existingPost.title)) {
+          updateData.title = existingPost.title; // Preserve existing
+          fieldsPreserved.push('title');
+          console.log(`📋 Preserving existing title for post ${post.post_id}: "${existingPost.title}"`);
+        } else {
+          updateData.title = post.title || null;
+        }
+
+        // Body: keep existing if new is empty/null, otherwise update  
+        if (DataValidator.hasContent(post.body)) {
+          updateData.body = post.body;
+          if (DataValidator.hasContent(existingPost.body) && existingPost.body !== post.body) {
+            willOverwrite.push(`body: "${existingPost.body.substring(0, 50)}..." -> "${post.body.substring(0, 50)}..."`);
+          }
+        } else if (DataValidator.hasContent(existingPost.body)) {
+          updateData.body = existingPost.body; // Preserve existing
+          fieldsPreserved.push('body');
+          console.log(`📋 Preserving existing body for post ${post.post_id} (${existingPost.body.length} chars)`);
+        } else {
+          updateData.body = post.body || null;
+        }
+
+        // Comments: keep existing if new is empty/null, otherwise update
+        if (DataValidator.hasContent(post.comments)) {
+          updateData.comments = post.comments;
+          if (DataValidator.hasContent(existingPost.comments) && existingPost.comments !== post.comments) {
+            willOverwrite.push(`comments: "${existingPost.comments.substring(0, 50)}..." -> "${post.comments.substring(0, 50)}..."`);
+          }
+        } else if (DataValidator.hasContent(existingPost.comments)) {
+          updateData.comments = existingPost.comments; // Preserve existing
+          fieldsPreserved.push('comments');
+          console.log(`📋 Preserving existing comments for post ${post.post_id} (${existingPost.comments.length} chars)`);
+        } else {
+          updateData.comments = post.comments || null;
+        }
+
+        // Record data preservation metrics
+        if (fieldsPreserved.length > 0 || willOverwrite.length > 0) {
+          ProcessingMonitor.recordDataPreservation({
+            postId: post.post_id,
+            fieldsPreserved,
+            wasOverwrite: willOverwrite.length > 0
+          });
+        }
+
+        // Log overwrites for debugging
+        if (willOverwrite.length > 0) {
+          console.log(`🔄 Post ${post.post_id} data changes:`, willOverwrite);
+        }
+      } else {
+        // New post - use all provided data
+        updateData.title = post.title || null;
+        updateData.body = post.body || null;
+        updateData.comments = post.comments || null;
+      }
+
       const { error } = await getSupabaseClient()
         .from('posts')
-        .upsert({
-          post_id: post.post_id,
-          subreddit: post.subreddit,
-          url: post.url,
-          title: post.title,
-          body: post.body,
-          comments: post.comments,
-          created_utc: post.created_utc ? new Date(post.created_utc) : null,
-          relevance_score: relevanceScore,
-          classification_justification: classification,
-          run_id: runId
-        });
+        .upsert(updateData);
 
       if (error) {
         return {
