@@ -7,7 +7,9 @@ const DELAYS = {
   NOTION_DATABASE: 1000,       // Database operations
   NOTION_HEAVY: 2000,         // Heavy operations (large content)
   DATABASE_CREATION: 3000,     // After database creation
-  BATCH_PROCESSING: 500        // Between batch items
+  BATCH_PROCESSING: 150,       // Between batch items (optimized from 500ms)
+  MICRO_BATCH: 50,            // For small batches
+  ERROR_RECOVERY: 1000        // Only when retrying errors
 };
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -147,6 +149,38 @@ export async function createQuotesDatabase(
             format: "number"
           }
         },
+        "Justification": {
+          rich_text: {}
+        },
+        "Extraction Method": {
+          select: {
+            options: [
+              { name: "structured_xml", color: "green" },
+              { name: "generic_extraction", color: "blue" },
+              { name: "text_in_quotes", color: "yellow" },
+              { name: "sentence_extraction", color: "orange" },
+              { name: "emergency_fallback", color: "red" },
+              { name: "unknown", color: "gray" }
+            ]
+          }
+        },
+        "Question Aspects": {
+          multi_select: {
+            options: [
+              { name: "pricing", color: "green" },
+              { name: "features", color: "blue" },
+              { name: "user_experience", color: "purple" },
+              { name: "competition", color: "orange" },
+              { name: "pain_points", color: "red" },
+              { name: "user_needs", color: "pink" },
+              { name: "performance", color: "yellow" },
+              { name: "integration", color: "gray" },
+              { name: "support", color: "brown" },
+              { name: "workflow", color: "default" },
+              { name: "general_relevance", color: "light_gray" }
+            ]
+          }
+        },
         "Date Added": {
           date: {}
         },
@@ -201,6 +235,19 @@ export function formatQuoteForNotion(quote: any): any {
     "Relevance Score": {
       number: quote.relevance_score || 0
     },
+    "Justification": {
+      rich_text: [
+        {
+          text: { content: quote.relevance_justification || "No justification provided" }
+        }
+      ]
+    },
+    "Extraction Method": {
+      select: { name: quote.processing_method || "unknown" }
+    },
+    "Question Aspects": {
+      multi_select: (quote.question_aspects || []).map((aspect: string) => ({ name: aspect }))
+    },
     "Date Added": {
       date: { start: quote.inserted_at || new Date().toISOString().split('T')[0] }
     }
@@ -225,7 +272,7 @@ export function formatQuoteForNotion(quote: any): any {
 
 /**
  * Add quotes to the individual run's Notion database
- * Uses sequential processing to prevent conflicts and rate limiting
+ * Uses smart batching based on quote count for optimal performance
  */
 export async function addQuotesToNotion(
   notion: Client,
@@ -238,42 +285,73 @@ export async function addQuotesToNotion(
     errors: [] as any[]
   };
 
-  console.log(`Processing ${quotes.length} quotes sequentially...`);
+  const totalQuotes = quotes.length;
+  console.log(`Processing ${totalQuotes} quotes with smart batching...`);
+
+  // Smart batching strategy based on quote count
+  let batchSize: number;
+  let batchDelay: number;
   
-  // Process quotes sequentially to prevent conflicts
-  for (const quote of quotes) {
-    try {
-      const properties = formatQuoteForNotion(quote);
-      
-      await notionCreateWithRetry(
-        () => notion.pages.create({
-          parent: { database_id: databaseId },
-          properties
-        }),
-        `Quote creation for ${quote.quote_id || 'unknown'}`
-      );
-      
-      results.count++;
-      
-      // Delay between each quote to prevent conflicts
-      await delay(DELAYS.BATCH_PROCESSING); // 500ms between quotes
-      
-      // Progress logging for large batches
-      if (results.count % 50 === 0) {
-        console.log(`Processed ${results.count}/${quotes.length} quotes`);
+  if (totalQuotes <= 50) {
+    batchSize = 5; 
+    batchDelay = DELAYS.MICRO_BATCH;      // Small: 5 at a time, 50ms delay
+    console.log('Using small batch strategy: 5 quotes per batch, 50ms delay');
+  } else if (totalQuotes <= 200) {
+    batchSize = 3; 
+    batchDelay = DELAYS.BATCH_PROCESSING; // Medium: 3 at a time, 150ms delay
+    console.log('Using medium batch strategy: 3 quotes per batch, 150ms delay');
+  } else {
+    batchSize = 2; 
+    batchDelay = 200;                     // Large: 2 at a time, 200ms delay
+    console.log('Using large batch strategy: 2 quotes per batch, 200ms delay');
+  }
+  
+  // Process in micro-batches for better throughput
+  for (let i = 0; i < quotes.length; i += batchSize) {
+    const batch = quotes.slice(i, i + batchSize);
+    
+    // Process batch in parallel (safe for small batches)
+    const batchPromises = batch.map(async (quote) => {
+      try {
+        const properties = formatQuoteForNotion(quote);
+        
+        await notionCreateWithRetry(
+          () => notion.pages.create({
+            parent: { database_id: databaseId },
+            properties
+          }),
+          `Quote creation for ${quote.quote_id || 'unknown'}`
+        );
+        
+        results.count++;
+        return { success: true, quote_id: quote.quote_id };
+      } catch (error: any) {
+        console.error(`Failed to add quote ${quote.quote_id}:`, error);
+        results.errors.push({
+          quote_id: quote.quote_id,
+          error: error.message
+        });
+        results.success = false;
+        return { success: false, quote_id: quote.quote_id };
       }
-      
-    } catch (error: any) {
-      console.error(`Failed to add quote:`, error);
-      results.errors.push({
-        quote_id: quote.quote_id,
-        error: error.message
-      });
-      results.success = false;
+    });
+    
+    // Wait for batch to complete
+    await Promise.all(batchPromises);
+    
+    // Smart delay based on batch size (only between batches, not after last)
+    if (i + batchSize < quotes.length) {
+      await delay(batchDelay);
+    }
+    
+    // Progress logging for large batches
+    if (results.count % 50 === 0 || i + batchSize >= quotes.length) {
+      console.log(`Processed ${results.count}/${quotes.length} quotes`);
     }
   }
   
-  console.log(`Quote processing complete: ${results.count}/${quotes.length} successful`);
+  const performance = totalQuotes > 0 ? (results.count / totalQuotes * 100).toFixed(1) : '0';
+  console.log(`Quote processing complete: ${results.count}/${quotes.length} successful (${performance}%)`);
   return results;
 }
 
