@@ -268,33 +268,34 @@ export async function POST(request: Request) {
       titleLength: parentPageTitle.length
     });
 
-    // Create parent page in database
+    // Create parent page in database with minimal properties
     let parentPage;
     try {
+      // First try with just the title property to see if that works
       parentPage = await notion.pages.create({
         parent: { database_id: process.env.NOTION_DATABASE_ID! },
         properties: {
           Company: {
             title: [{ text: { content: parentPageTitle } }]
-          },
-          "Report Type": {
-            rich_text: [{ text: { content: (reportType || '').substring(0, 200) } }]
-          },
-          ...(email && isValidEmail(email) && {
-            "Contact Email": {
-              email: email
-            }
-          })
+          }
         }
       });
+      console.log('✅ Parent page created successfully with minimal properties');
     } catch (error: any) {
-      console.error('Notion parent page creation failed:', error);
+      console.error('❌ Notion parent page creation failed:', error);
       console.error('Properties sent:', {
         parentPageTitle,
-        reportType: reportType || '',
-        email: email || 'none',
-        hasValidEmail: email ? isValidEmail(email) : false
+        databaseId: process.env.NOTION_DATABASE_ID
       });
+      
+      // Try to get database schema info to debug
+      try {
+        const database = await notion.databases.retrieve({ database_id: process.env.NOTION_DATABASE_ID! });
+        console.log('Database properties:', Object.keys(database.properties));
+      } catch (dbError) {
+        console.error('Could not retrieve database info:', dbError);
+      }
+      
       throw new Error(`Failed to create parent page: ${error.message}`);
     }
 
