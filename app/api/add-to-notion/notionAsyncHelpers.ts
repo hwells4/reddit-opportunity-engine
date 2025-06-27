@@ -81,6 +81,20 @@ interface AIContentGenerationOptions {
   accountData?: any;
 }
 
+interface ResearchSummaryOptions {
+  companyName: string;
+  runStats: {
+    postsCount: number;
+    quotesCount: number;
+  };
+  subredditsAnalyzed?: string[];
+  timeframe?: string;
+  accountData?: {
+    industry?: string;
+    company_description?: string;
+  };
+}
+
 /**
  * Generate AI title asynchronously (can be called after initial response)
  */
@@ -107,26 +121,67 @@ export async function generateAITitleAsync(
 /**
  * Generate homepage intro content asynchronously
  */
+export async function generateResearchSummaryIntro(
+  options: ResearchSummaryOptions
+): Promise<string> {
+  try {
+    const { 
+      companyName, 
+      runStats, 
+      subredditsAnalyzed,
+      timeframe,
+      accountData 
+    } = options;
+    
+    return `# ${companyName} Market Research Analysis
+
+## Research Overview
+We conducted a comprehensive analysis of Reddit discussions to understand market opportunities and user needs relevant to ${companyName}. This research provides actionable insights from real user conversations and feedback.
+
+## Analysis Scope
+- **Posts Analyzed**: ${runStats.postsCount} relevant discussions
+- **Quotes Extracted**: ${runStats.quotesCount} valuable insights
+- **Communities**: ${subredditsAnalyzed?.length || 'Multiple'} subreddits analyzed
+- **Timeframe**: ${timeframe || 'Recent discussions'}
+${accountData?.industry ? `- **Industry Focus**: ${accountData.industry}` : ''}
+
+## What You'll Find Below
+1. **Strategy Report**: High-level market insights and opportunities
+2. **Comprehensive Analysis**: Detailed findings with supporting evidence
+3. **Quotes Database**: All extracted insights with relevance scoring and AI-powered justifications
+
+## How to Use This Research
+- Review the reports for strategic direction and market understanding
+- Explore the quotes database to understand user language and specific needs
+- Filter quotes by category (user needs, feature signals, etc.) for targeted insights
+- Use relevance scores and justifications to prioritize the most valuable findings
+
+*This analysis was generated using AI-powered content analysis of public Reddit discussions.*`;
+  } catch (error) {
+    console.error('Error generating research summary intro:', error);
+    return `# ${options.companyName} Market Research Analysis
+
+## Research Complete
+We've completed your market research analysis. The reports below contain valuable insights from our analysis of ${options.runStats?.postsCount || 'multiple'} posts and ${options.runStats?.quotesCount || 'extracted'} quotes from Reddit discussions.`;
+  }
+}
+
+// Keep the old function for backward compatibility during transition
 export async function generateHomepageIntroAsync(
   options: AIContentGenerationOptions
 ): Promise<string> {
   try {
-    const { contactName, companyName, strategyReport, comprehensiveReport, accountData } = options;
+    // Convert old options to new format
+    const researchOptions: ResearchSummaryOptions = {
+      companyName: options.companyName,
+      runStats: { postsCount: 0, quotesCount: 0 }, // Default values, should be provided by caller
+      accountData: options.accountData
+    };
     
-    const prompt = `Generate a brief, engaging introduction for ${contactName} from ${companyName}. 
-    ${accountData?.industry ? `They work in the ${accountData.industry} industry.` : ''}
-    ${accountData?.company_description ? `About them: ${accountData.company_description}` : ''}
-    
-    Summary of reports:
-    ${strategyReport ? `Strategy Report: ${strategyReport.slice(0, 500)}...` : ''}
-    ${comprehensiveReport ? `Comprehensive Report: ${comprehensiveReport.slice(0, 500)}...` : ''}
-    
-    Keep it friendly, professional, and under 3 paragraphs.`;
-    
-    return await getHomepageIntroFromLLM(prompt);
+    return await generateResearchSummaryIntro(researchOptions);
   } catch (error) {
-    console.error('Error generating homepage intro:', error);
-    return `Welcome! We've completed your market research analysis. The reports below contain valuable insights from our research.`;
+    console.error('Error in legacy homepage intro generation:', error);
+    return `Welcome! We've completed your market research analysis for ${options.companyName}. The reports below contain valuable insights from our research.`;
   }
 }
 

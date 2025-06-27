@@ -10,7 +10,6 @@ import {
 } from "./notionHelpers";
 import {
   generateAITitleAsync,
-  generateHomepageIntroAsync,
   processQuotesAsync,
   createPlaceholderBlock,
   createLoadingBlock,
@@ -520,26 +519,28 @@ export async function POST(request: Request) {
       // Generate and add homepage intro
       runId ?
         trackAsyncOperation(runId, 'homepageIntro', async () => {
-          const intro = await generateHomepageIntroAsync({
-            contactName,
+          const { generateResearchSummaryIntro } = await import('./notionAsyncHelpers');
+          const intro = await generateResearchSummaryIntro({
             companyName,
-            strategyReport,
-            comprehensiveReport,
-            accountData
+            runStats,
+            timeframe: 'Recent discussions',
+            accountData: accountData || undefined
           });
           
           // Apply the intro to the homepage by replacing the placeholder
           const success = await updateHomepageWithIntro(notion, brandedHomepage.id, intro);
-          console.log(`[ASYNC] Generated and applied homepage intro (${intro.length} chars), success: ${success}`);
+          console.log(`[ASYNC] Generated and applied research summary intro (${intro.length} chars), success: ${success}`);
           return intro;
         }) :
-        generateHomepageIntroAsync({
-          contactName,
-          companyName,
-          strategyReport,
-          comprehensiveReport,
-          accountData
-        })
+        (async () => {
+          const { generateResearchSummaryIntro } = await import('./notionAsyncHelpers');
+          return await generateResearchSummaryIntro({
+            companyName,
+            runStats,
+            timeframe: 'Recent discussions',
+            accountData: accountData || undefined
+          });
+        })()
           .then(async (intro) => {
             // Apply the intro to the homepage by replacing the placeholder
             const success = await updateHomepageWithIntro(notion, brandedHomepage.id, intro);
