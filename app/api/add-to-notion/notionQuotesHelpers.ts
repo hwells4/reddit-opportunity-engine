@@ -177,7 +177,7 @@ export async function createQuotesDatabase(
               { name: "integration", color: "gray" },
               { name: "support", color: "brown" },
               { name: "workflow", color: "default" },
-              { name: "general_relevance", color: "light_gray" }
+              { name: "general_relevance", color: "gray" }
             ]
           }
         },
