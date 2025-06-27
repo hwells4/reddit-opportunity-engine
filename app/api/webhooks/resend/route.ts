@@ -74,6 +74,13 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { run_id, modifications, ai_prompt, test_workflows } = body;
     
+    console.log('🔄 Webhook resend request received:');
+    console.log(`   Run ID: ${run_id}`);
+    console.log(`   Has AI prompt: ${!!ai_prompt}`);
+    console.log(`   Has modifications: ${!!modifications}`);
+    if (ai_prompt) console.log(`   AI prompt: "${ai_prompt}"`);
+    if (modifications) console.log(`   Modifications:`, JSON.stringify(modifications, null, 2));
+    
     if (!run_id) {
       return NextResponse.json(
         { error: "run_id is required" },
@@ -111,6 +118,7 @@ export async function POST(request: Request) {
     
     if (ai_prompt) {
       // Use AI to modify the payload based on the prompt
+      console.log('🤖 Processing AI modification request...');
       try {
         const apiKey = process.env.OPENROUTER_API_KEY;
         if (!apiKey) throw new Error('OPENROUTER_API_KEY not set');
@@ -162,6 +170,8 @@ Return the modified payload as valid JSON.`;
 
         const completion = await response.json();
         modifiedPayload = JSON.parse(completion.choices[0].message.content || "{}");
+        console.log('✅ AI modification completed successfully');
+        console.log('📝 AI-modified payload preview:', JSON.stringify(modifiedPayload, null, 2).substring(0, 500) + '...');
       } catch (aiError) {
         console.error('AI modification failed:', aiError);
         return NextResponse.json(

@@ -182,7 +182,12 @@ async function resendWebhook(): Promise<void> {
       
       const modMethod = await ask('Choose method (1-2): ')
       
-      if (modMethod === '1') {
+      // Check if user typed natural language instead of selecting a number
+      if (modMethod !== '1' && modMethod !== '2' && modMethod.length > 5) {
+        console.log(chalk.cyan('🤖 Detected natural language input, using AI-powered modifications...'))
+        aiPrompt = modMethod.trim()
+        console.log(chalk.green(`✓ Will use AI to: ${aiPrompt}`))
+      } else if (modMethod === '1') {
         // AI-powered modifications
         console.log(chalk.yellow('\nDescribe your modifications in natural language:'))
         console.log(chalk.gray('Examples:'))
@@ -225,7 +230,25 @@ async function resendWebhook(): Promise<void> {
         }
         
         modifications = mods.pipeline_inputs.length > 0 ? mods : null
+      } else {
+        console.log(chalk.yellow('❌ Invalid selection. No modifications will be made.'))
       }
+    }
+    
+    // Show summary of changes
+    if (aiPrompt) {
+      console.log(chalk.blue('\n📝 Planned modifications:'))
+      console.log(chalk.gray(`   AI Request: "${aiPrompt}"`))
+      console.log(chalk.cyan('   🤖 AI will intelligently modify the webhook'))
+      console.log(chalk.cyan('   🔍 Subreddit changes will be automatically validated'))
+    } else if (modifications && modifications.pipeline_inputs.length > 0) {
+      console.log(chalk.blue('\n📝 Planned modifications:'))
+      modifications.pipeline_inputs.forEach((mod: any) => {
+        console.log(chalk.gray(`   • ${mod.input_name}: ${mod.value}`))
+      })
+      console.log(chalk.cyan('   🔍 Subreddit changes will be automatically validated'))
+    } else {
+      console.log(chalk.gray('\n📝 No modifications - resending original webhook'))
     }
     
     // Confirm and send
