@@ -265,20 +265,6 @@ export async function POST(request: Request) {
         },
         "Contact Email": {
           email: email || ''
-        },
-        // Add client tracking fields
-        ...(accountData?.account_id && {
-          "Client ID": {
-            rich_text: [{ text: { content: accountData.account_id } }]
-          }
-        }),
-        ...(runId && {
-          "Run ID": {
-            rich_text: [{ text: { content: runId } }]
-          }
-        }),
-        "Client Name": {
-          rich_text: [{ text: { content: companyName } }]
         }
       }
     });
