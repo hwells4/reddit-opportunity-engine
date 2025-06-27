@@ -111,10 +111,8 @@ export async function POST(request: Request) {
     if (ai_prompt) {
       // Use AI to modify the payload based on the prompt
       try {
-        const OpenAI = (await import('openai')).default;
-        const openai = new OpenAI({
-          apiKey: process.env.OPENAI_API_KEY || "",
-        });
+        const apiKey = process.env.OPENROUTER_API_KEY;
+        if (!apiKey) throw new Error('OPENROUTER_API_KEY not set');
 
         const systemPrompt = `You are a webhook payload modifier. You will receive a webhook payload and a modification request.
 Your job is to modify the payload according to the request while maintaining its structure and validity.
@@ -135,15 +133,27 @@ Modification request: ${ai_prompt}
 
 Return the modified payload as valid JSON.`;
 
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          response_format: { type: "json_object" }
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'openai/gpt-4o-mini',
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt }
+            ],
+            response_format: { type: "json_object" }
+          })
         });
-        
+
+        if (!response.ok) {
+          throw new Error(`OpenRouter API error: ${response.status}`);
+        }
+
+        const completion = await response.json();
         modifiedPayload = JSON.parse(completion.choices[0].message.content || "{}");
       } catch (aiError) {
         console.error('AI modification failed:', aiError);
