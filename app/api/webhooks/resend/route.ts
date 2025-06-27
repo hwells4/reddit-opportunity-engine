@@ -212,6 +212,10 @@ Return the modified payload as valid JSON.`;
     // Generate new run_id for the resend
     const newRunId = `${run_id}-resend-${Date.now()}`;
     
+    // Create database entry for the new run to prevent system breakage
+    console.log('📋 Creating database entry for resent webhook...');
+    await createResendRunViaAPI(run_id, newRunId, modifiedPayload);
+    
     // Update the run_id in the payload
     if (modifiedPayload.run_id) {
       modifiedPayload.run_id = newRunId;
@@ -458,5 +462,78 @@ async function validateAndAdjustSubreddits(payload: any): Promise<any> {
   } catch (error) {
     console.error('❌ Error validating subreddits:', error);
     throw new Error(`Failed to validate subreddits: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Create database entry for resent webhook using existing API
+async function createResendRunViaAPI(originalRunId: string, newRunId: string, modifiedPayload: any): Promise<void> {
+  const supabase = getSupabaseClient();
+  
+  try {
+    // Fetch original run data to inherit metadata
+    const { data: originalRun, error: fetchError } = await supabase
+      .from('runs')
+      .select('*')
+      .eq('run_id', originalRunId)
+      .single();
+    
+    if (fetchError || !originalRun) {
+      console.error('❌ Failed to fetch original run:', fetchError);
+      throw new Error('Cannot create resend entry without original run data');
+    }
+    
+    // Extract updated data from modified payload
+    const getFieldFromPayload = (fieldName: string): any => {
+      if (modifiedPayload.pipeline_inputs) {
+        const input = modifiedPayload.pipeline_inputs.find((i: any) => i.input_name === fieldName);
+        return input?.value;
+      }
+      return modifiedPayload[fieldName];
+    };
+    
+    // Get base URL for internal API call
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+      : "https://reddit-opportunity-engine-production.up.railway.app";
+    
+    // Prepare run data for the existing API
+    const runData = {
+      run_id: newRunId,
+      user_question: originalRun.user_question,
+      problem_area: originalRun.problem_area,
+      target_audience: originalRun.target_audience,
+      product_type: originalRun.product_type,
+      product_name: originalRun.product_name,
+      account_id: originalRun.account_id, // Critical - inherit account association
+      user_id: originalRun.user_id,
+      
+      // Use modified subreddits if available, otherwise inherit from original
+      subreddits: getFieldFromPayload('subreddits') ? 
+        getFieldFromPayload('subreddits').split(';') : 
+        originalRun.subreddits
+    };
+    
+    // Call existing /api/runs endpoint
+    const response = await fetch(`${baseUrl}/api/runs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(runData)
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API call failed: ${errorData.error || response.statusText}`);
+    }
+    
+    const result = await response.json();
+    
+    console.log(`✅ Created database entry for resent run: ${newRunId}`);
+    console.log(`   Inherited from: ${originalRunId}`);
+    console.log(`   Account: ${originalRun.account_id}`);
+    console.log(`   Subreddits: ${runData.subreddits?.join(', ') || 'none'}`);
+    
+  } catch (error) {
+    console.error('❌ Error creating resend run entry:', error);
+    throw error;
   }
 }
