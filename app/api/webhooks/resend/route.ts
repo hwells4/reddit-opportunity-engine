@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from '@supabase/supabase-js';
+import { RedditValidator } from '../../../../lib/discovery/reddit-validator';
 
 function getSupabaseClient() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
       );
     }
     
-    // Apply modifications
+    // Apply modifications with intelligent validation
     let modifiedPayload = { ...originalPayload };
     
     if (ai_prompt) {
@@ -114,15 +115,21 @@ export async function POST(request: Request) {
         const apiKey = process.env.OPENROUTER_API_KEY;
         if (!apiKey) throw new Error('OPENROUTER_API_KEY not set');
 
-        const systemPrompt = `You are a webhook payload modifier. You will receive a webhook payload and a modification request.
+        const systemPrompt = `You are an intelligent webhook payload modifier for Reddit analysis pipelines. You will receive a webhook payload and a modification request.
 Your job is to modify the payload according to the request while maintaining its structure and validity.
 
-Rules:
-1. Maintain the same overall structure
-2. Only modify what's requested
-3. Ensure array lengths remain consistent (e.g., subreddits and subscribers must have same count)
-4. Keep all required fields
-5. Return valid JSON
+IMPORTANT RULES:
+1. Maintain the same overall structure and format
+2. Only modify what's explicitly requested
+3. If modifying subreddits, ONLY change the subreddits field - do NOT change subscribers (the system will auto-validate and adjust subscriber counts)
+4. Keep all required fields (run_id, email, post_limit, etc.)
+5. Preserve pipeline_inputs array structure if present
+6. Return valid JSON that matches the original structure exactly
+
+SUBREDDIT HANDLING:
+- When user requests subreddit changes, only modify the 'subreddits' field
+- Do NOT modify 'subscribers' field - it will be automatically updated with current Reddit API data
+- Example: If user says "change subreddits to programming;webdev", only update subreddits field
 
 Original payload structure should be preserved unless explicitly asked to change it.`;
 
@@ -183,6 +190,13 @@ Return the modified payload as valid JSON.`;
         // Direct field modifications
         modifiedPayload = { ...modifiedPayload, ...modifications };
       }
+    }
+    
+    // Intelligent validation and auto-adjustment for subreddit changes
+    const needsSubredditValidation = await checkIfSubredditModification(modifiedPayload, originalPayload);
+    if (needsSubredditValidation) {
+      console.log('🔍 Detected subreddit changes, running intelligent validation...');
+      modifiedPayload = await validateAndAdjustSubreddits(modifiedPayload);
     }
     
     // Generate new run_id for the resend
@@ -255,8 +269,12 @@ Return the modified payload as valid JSON.`;
       }
       
       try {
+        const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+          ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+          : "https://reddit-opportunity-engine-production.up.railway.app";
+          
         const targetUrl = workflow.workflow_url === 'original' 
-          ? '/api/start-pipeline' 
+          ? `${baseUrl}/api/start-pipeline` 
           : workflow.workflow_url;
           
         console.log(`Sending webhook to ${workflow.workflow_name} (${targetUrl}) with run_id: ${testRunId}`);
@@ -320,5 +338,115 @@ Return the modified payload as valid JSON.`;
       { error: "Failed to resend webhook" },
       { status: 500 }
     );
+  }
+}
+
+// Helper function to check if subreddit modifications were made
+async function checkIfSubredditModification(modifiedPayload: any, originalPayload: any): Promise<boolean> {
+  // Check if subreddits were modified in pipeline_inputs
+  if (modifiedPayload.pipeline_inputs) {
+    const originalSubreddits = getSubredditsFromPayload(originalPayload);
+    const modifiedSubreddits = getSubredditsFromPayload(modifiedPayload);
+    
+    if (originalSubreddits !== modifiedSubreddits) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Helper function to extract subreddits from payload
+function getSubredditsFromPayload(payload: any): string {
+  if (payload.pipeline_inputs) {
+    const subredditsInput = payload.pipeline_inputs.find(
+      (input: any) => input.input_name === 'subreddits'
+    );
+    return subredditsInput?.value || '';
+  }
+  return payload.subreddits || '';
+}
+
+// Helper function to extract subscribers from payload
+function getSubscribersFromPayload(payload: any): string {
+  if (payload.pipeline_inputs) {
+    const subscribersInput = payload.pipeline_inputs.find(
+      (input: any) => input.input_name === 'subscribers'
+    );
+    return subscribersInput?.value || '';
+  }
+  return payload.subscribers || '';
+}
+
+// Intelligent subreddit validation and subscriber adjustment
+async function validateAndAdjustSubreddits(payload: any): Promise<any> {
+  const validator = new RedditValidator();
+  const subredditsStr = getSubredditsFromPayload(payload);
+  
+  if (!subredditsStr) {
+    console.log('❌ No subreddits found in payload');
+    return payload;
+  }
+
+  const subredditNames = subredditsStr.split(';').map(s => s.trim()).filter(s => s);
+  console.log(`🔍 Validating ${subredditNames.length} subreddits: ${subredditNames.join(', ')}`);
+
+  try {
+    // Validate all subreddits and get their subscriber counts
+    const validatedSubreddits = await validator.validateSubreddits(subredditNames);
+    
+    // Filter to only valid subreddits
+    const validSubreddits = validatedSubreddits.filter(
+      sub => sub.validation_status === 'valid' && sub.subscribers > 0
+    );
+
+    if (validSubreddits.length === 0) {
+      throw new Error('No valid subreddits found after validation');
+    }
+
+    // Update the payload with validated data
+    const validNames = validSubreddits.map(sub => sub.name);
+    const validSubscribers = validSubreddits.map(sub => sub.subscribers.toString());
+
+    console.log(`✅ Validated ${validSubreddits.length}/${subredditNames.length} subreddits`);
+    console.log('📊 Updated subscriber counts:');
+    validSubreddits.forEach(sub => {
+      console.log(`   • r/${sub.name}: ${sub.subscribers.toLocaleString()} subscribers`);
+    });
+
+    // Update the payload
+    if (payload.pipeline_inputs) {
+      // Update pipeline_inputs format
+      const existingSubredditsIndex = payload.pipeline_inputs.findIndex(
+        (input: any) => input.input_name === 'subreddits'
+      );
+      const existingSubscribersIndex = payload.pipeline_inputs.findIndex(
+        (input: any) => input.input_name === 'subscribers'
+      );
+
+      if (existingSubredditsIndex >= 0) {
+        payload.pipeline_inputs[existingSubredditsIndex].value = validNames.join(';');
+      }
+      
+      if (existingSubscribersIndex >= 0) {
+        payload.pipeline_inputs[existingSubscribersIndex].value = validSubscribers.join(';');
+      } else {
+        // Add subscribers if it doesn't exist
+        payload.pipeline_inputs.push({
+          input_name: 'subscribers',
+          value: validSubscribers.join(';')
+        });
+      }
+    } else {
+      // Update direct format
+      payload.subreddits = validNames.join(';');
+      payload.subscribers = validSubscribers.join(';');
+    }
+
+    return payload;
+
+  } catch (error) {
+    console.error('❌ Error validating subreddits:', error);
+    throw new Error(`Failed to validate subreddits: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

@@ -172,34 +172,60 @@ async function resendWebhook(): Promise<void> {
     const modify = await ask('\nModify anything before resending? (y/n): ')
     
     let modifications = null
+    let aiPrompt = null
+    
     if (modify.toLowerCase() === 'y') {
-      console.log(chalk.yellow('\nEnter modifications (field_name=new_value, empty to finish):'))
-      console.log(chalk.gray('Example: post_limit=100'))
-      console.log(chalk.gray('Example: subreddits=programming;webdev'))
+      // Ask for modification method
+      console.log(chalk.cyan('\nHow would you like to modify the webhook?'))
+      console.log('1. 🤖 AI-powered natural language (e.g., "change subreddits to programming and webdev")')
+      console.log('2. ⚙️  Direct field modifications (e.g., post_limit=100)')
       
-      const mods: any = { pipeline_inputs: [] }
+      const modMethod = await ask('Choose method (1-2): ')
       
-      while (true) {
-        const input = await ask('Modification: ')
-        if (!input) break
+      if (modMethod === '1') {
+        // AI-powered modifications
+        console.log(chalk.yellow('\nDescribe your modifications in natural language:'))
+        console.log(chalk.gray('Examples:'))
+        console.log(chalk.gray('  - "Change subreddits to programming, webdev, and javascript"'))
+        console.log(chalk.gray('  - "Reduce post limit to 50"'))
+        console.log(chalk.gray('  - "Change email to john@company.com"'))
         
-        const [field, ...valueParts] = input.split('=')
-        const value = valueParts.join('=')
+        const prompt = await ask('\nYour request: ')
+        if (prompt.trim()) {
+          aiPrompt = prompt.trim()
+          console.log(chalk.green(`✓ Will use AI to: ${aiPrompt}`))
+        }
+      } else if (modMethod === '2') {
+        // Direct field modifications
+        console.log(chalk.yellow('\nEnter modifications (field_name=new_value, empty to finish):'))
+        console.log(chalk.gray('Example: post_limit=100'))
+        console.log(chalk.gray('Example: subreddits=programming;webdev'))
+        console.log(chalk.cyan('💡 Subreddit changes are automatically validated with current subscriber counts'))
         
-        if (!field || !value) {
-          console.log(chalk.red('Invalid format. Use: field_name=value'))
-          continue
+        const mods: any = { pipeline_inputs: [] }
+        
+        while (true) {
+          const input = await ask('Modification: ')
+          if (!input) break
+          
+          const [field, ...valueParts] = input.split('=')
+          const value = valueParts.join('=')
+          
+          if (!field || !value) {
+            console.log(chalk.red('Invalid format. Use: field_name=value'))
+            continue
+          }
+          
+          mods.pipeline_inputs.push({
+            input_name: field.trim(),
+            value: value.trim()
+          })
+          
+          console.log(chalk.green(`✓ Will modify ${field} to "${value}"`))
         }
         
-        mods.pipeline_inputs.push({
-          input_name: field.trim(),
-          value: value.trim()
-        })
-        
-        console.log(chalk.green(`✓ Will modify ${field} to "${value}"`))
+        modifications = mods.pipeline_inputs.length > 0 ? mods : null
       }
-      
-      modifications = mods.pipeline_inputs.length > 0 ? mods : null
     }
     
     // Confirm and send
@@ -214,6 +240,9 @@ async function resendWebhook(): Promise<void> {
     const body: any = { run_id: runId }
     if (modifications) {
       body.modifications = modifications
+    }
+    if (aiPrompt) {
+      body.ai_prompt = aiPrompt
     }
     
     const response = await fetch(`${API_BASE}/api/webhooks/resend`, {
