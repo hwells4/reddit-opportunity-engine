@@ -80,15 +80,15 @@ Example:
 
 2) In `<question_relevance_flag>` tags, output **"TRUE"** if this post contains information directly relevant to the **User Question/Goal**, otherwise output **"FALSE"**. If TRUE, briefly explain why in 1 sentence.
 
-3) In `<user_needs>` tags, identify ALL specific problems, tasks, or goals users are trying to accomplish related to our **Core Context**. Extract DIRECT QUOTES EXACTLY AS WRITTEN - do not paraphrase, modify, or change the user's words in any way. Copy quotes character-for-character. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, and `theme="[specific theme]"`. Example: <quote is_question_relevant="true" sentiment="negative" theme="frustration">This feature is crucial for solving the user's stated problem.</quote>*
+3) In `<user_needs>` tags, identify ALL specific problems, tasks, or goals users are trying to accomplish related to our **Core Context**. Extract DIRECT QUOTES EXACTLY AS WRITTEN - do not paraphrase, modify, or change the user's words in any way. Copy quotes character-for-character. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[brief explanation]"`. Example: <quote is_question_relevant="true" sentiment="negative" theme="frustration" justification="Shows pain point with current solutions">This feature is crucial for solving the user's stated problem.</quote>*
 
 4) In `<current_solutions>` tags, list ALL tools, methods, or workarounds explicitly mentioned related to the **Core Context**. Note limitations/benefits. *If a solution or its aspect is particularly relevant to the User Question/Goal, add a note: <solution_detail question_focus="true">This part of the solution directly addresses pricing concerns mentioned in the user question.</solution_detail>*
 
-5) In `<user_language>` tags, extract AT LEAST 3-5 DIRECT QUOTES (more if available and distinct) related to the **Core Context**. Copy quotes EXACTLY AS WRITTEN - character-for-character with no modifications. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, and `theme="[specific theme]"`.*
+5) In `<user_language>` tags, extract AT LEAST 3-5 DIRECT QUOTES (more if available and distinct) related to the **Core Context**. Copy quotes EXACTLY AS WRITTEN - character-for-character with no modifications. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[brief explanation]"`.*
 
 *Actively look for language patterns related to the User Question/Goal.*
 
-6) In `<feature_signals>` tags, document ALL specific capabilities or attributes users request, praise, criticize, or imply they need, related to the **Core Context**. Include EXACT QUOTES character-for-character. *If a signal is particularly relevant to the User Question/Goal, add a note or attribute.*
+6) In `<feature_signals>` tags, document ALL specific capabilities or attributes users request, praise, criticize, or imply they need, related to the **Core Context**. Include EXACT QUOTES character-for-character. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[brief explanation]"`.*
 
 7) In `<audience_indicators>` tags, note user roles, experience, context, demographics. *Highlight indicators relevant to the User Question/Goal (e.g., if the question is about enterprise users, note mentions of company size).* (extract all, then note/attribute if question-relevant)
 
@@ -102,7 +102,7 @@ Example:
 
 - Do NOT use JSON format at any point
 
-- ALL quotes must have sentiment and theme attributes: `sentiment="positive/negative/neutral"` and `theme="[specific theme]"`
+- ALL quotes must have sentiment, theme, and justification attributes: `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[brief explanation]"`
 
 - ALL quotes must have a question relevance flag: `is_question_relevant="true/false"`
 
@@ -111,21 +111,17 @@ Example:
 - Always use the `<tag>content</tag>` XML format exactly as shown in the instructions
 
 - Focus on extracting EXACT quotes character-for-character with proper sentiment and theme attributes - never modify user language
-```
 
-## Key Optimizations
+<developers_note>
+CRITICAL FORMATTING REMINDER: You often mix XML tags inside quote text or include analysis metadata as quotes. Please pay extra attention to:
+1. Keep quote text completely separate from XML tags - no "<", ">", or XML fragments in the quote text itself
+2. Each quote must be a complete user statement, not analysis text or relevance scores
+3. Ensure all required attributes (sentiment, theme, justification) are in the XML tag, not in the quote text
+4. Never include metadata like "relevance_score" or "indicator" as part of a quote
 
-1. **UUID Handling**: Explicitly instructs to use exact UUIDs provided
-2. **Token Efficiency**: Avoids UUID regeneration/modification
-3. **Structured Output**: Maintains compatibility with existing parser
-4. **Quote Attribution**: Preserves deterministic quote-to-post linking
-5. **Enhanced Metadata**: Adds sentiment and theme attributes to all quotes
+Example of CORRECT format:
+<quote is_question_relevant="true" sentiment="frustrated" theme="cost_concerns" justification="Shows clear pain point about pricing">The subscription is way too expensive for what we get</quote>
 
-## Usage in Gumloop
-
-1. Generate UUIDs with `post_id_generator.py`
-2. Format posts with UUIDs in the prompt
-3. Ensure analysis output uses exact UUIDs with sentiment/theme attributes
-4. Send to `/api/process` endpoint for parsing
-
-This approach maintains 100% quote attribution while optimizing token usage and extracting rich sentiment/theme metadata for the quotes table.
+Example of INCORRECT format:
+<quote>relevance_score>8 - This shows frustration with pricing</quote>
+</developers_note>

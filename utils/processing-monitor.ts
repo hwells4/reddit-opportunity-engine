@@ -14,6 +14,12 @@ interface ProcessingMetrics {
   }
   errorBreakdown: Record<string, number>
   fallbackUsage: Record<string, number>
+  aiExtractionUsage: {
+    timesUsed: number
+    quotesExtracted: number
+    averageCostPerExtraction: number
+    totalCost: number
+  }
   dataPreservation: {
     postsWithDataPreserved: number    // Number of posts where existing data was preserved
     fieldsPreserved: Record<string, number>  // Count of each field type preserved (title, body, comments)
@@ -39,6 +45,12 @@ export class ProcessingMonitor {
     successRates: { posts: 0, quotes: 0, overall: 0 },
     errorBreakdown: {},
     fallbackUsage: {},
+    aiExtractionUsage: {
+      timesUsed: 0,
+      quotesExtracted: 0,
+      averageCostPerExtraction: 0,
+      totalCost: 0
+    },
     dataPreservation: {
       postsWithDataPreserved: 0,
       fieldsPreserved: {},
@@ -74,6 +86,24 @@ export class ProcessingMonitor {
     }
     
     console.log(`[DataPreservation] Post ${data.postId}: preserved ${data.fieldsPreserved.join(', ')}`)
+  }
+
+  /**
+   * Record AI extraction usage for monitoring costs and effectiveness
+   */
+  static recordAIExtraction(data: {
+    quotesExtracted: number
+    estimatedCost: number
+  }) {
+    this.metrics.aiExtractionUsage.timesUsed++
+    this.metrics.aiExtractionUsage.quotesExtracted += data.quotesExtracted
+    this.metrics.aiExtractionUsage.totalCost += data.estimatedCost
+    
+    // Update average cost per extraction
+    this.metrics.aiExtractionUsage.averageCostPerExtraction = 
+      this.metrics.aiExtractionUsage.totalCost / this.metrics.aiExtractionUsage.timesUsed
+    
+    console.log(`[AIExtraction] Used intelligent extraction: ${data.quotesExtracted} quotes, estimated cost: $${data.estimatedCost.toFixed(4)}`)
   }
 
   /**
@@ -149,6 +179,18 @@ export class ProcessingMonitor {
       if (status === 'healthy') status = 'degraded'
     }
 
+    // Check AI extraction usage
+    const aiUsageRate = (this.metrics.aiExtractionUsage.timesUsed / this.metrics.totalPosts) * 100
+    if (aiUsageRate > 30) {
+      alerts.push(`High AI extraction usage: ${aiUsageRate.toFixed(1)}% of posts requiring intelligent fallback`)
+      if (status === 'healthy') status = 'degraded'
+    }
+
+    // Check AI extraction costs
+    if (this.metrics.aiExtractionUsage.totalCost > 1.0) {
+      alerts.push(`AI extraction costs: $${this.metrics.aiExtractionUsage.totalCost.toFixed(2)} total`)
+    }
+
     return {
       ...this.metrics,
       status,
@@ -200,6 +242,12 @@ export class ProcessingMonitor {
       successRates: { posts: 0, quotes: 0, overall: 0 },
       errorBreakdown: {},
       fallbackUsage: {},
+      aiExtractionUsage: {
+        timesUsed: 0,
+        quotesExtracted: 0,
+        averageCostPerExtraction: 0,
+        totalCost: 0
+      },
       dataPreservation: {
         postsWithDataPreserved: 0,
         fieldsPreserved: {},

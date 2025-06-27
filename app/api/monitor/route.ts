@@ -21,6 +21,13 @@ export async function GET(request: NextRequest) {
             last_updated: health.timestamp
           },
           fallback_usage: health.fallbackUsage,
+          ai_extraction: {
+            times_used: health.aiExtractionUsage.timesUsed,
+            quotes_extracted: health.aiExtractionUsage.quotesExtracted,
+            total_cost: `$${health.aiExtractionUsage.totalCost.toFixed(4)}`,
+            average_cost_per_extraction: `$${health.aiExtractionUsage.averageCostPerExtraction.toFixed(4)}`,
+            usage_rate: health.totalPosts > 0 ? `${((health.aiExtractionUsage.timesUsed / health.totalPosts) * 100).toFixed(1)}%` : '0%'
+          },
           error_summary: health.errorBreakdown
         })
 
