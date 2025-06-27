@@ -9,9 +9,60 @@ import {
 } from "./notionQuotesHelpers";
 import { SupabaseClient } from '@supabase/supabase-js';
 
-// Add delay utility for sequential operations
-const NOTION_DELAY = 100; // 100ms between Notion operations
+// Updated delay constants for different operation types
+const DELAYS = {
+  NOTION_BASIC: 100,           // Basic operations
+  NOTION_DATABASE: 1000,       // Database operations
+  NOTION_HEAVY: 2000,         // Heavy operations (large content)
+  DATABASE_CREATION: 3000,     // After database creation
+  BATCH_PROCESSING: 500        // Between batch items
+};
+
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Add blocks to a page in chunks to respect Notion's 100-block limit
+ * This prevents validation errors when adding large content
+ */
+async function addBlocksInChunks(
+  notion: Client, 
+  pageId: string, 
+  blocks: any[], 
+  maxChunks = 100
+): Promise<boolean> {
+  if (blocks.length === 0) return true;
+  
+  console.log(`Adding ${blocks.length} blocks in chunks of ${maxChunks}`);
+  
+  const chunks = [];
+  for (let i = 0; i < blocks.length; i += maxChunks) {
+    chunks.push(blocks.slice(i, i + maxChunks));
+  }
+  
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    
+    try {
+      await notion.blocks.children.append({
+        block_id: pageId,
+        children: chunk
+      });
+      
+      console.log(`Added chunk ${i + 1}/${chunks.length} (${chunk.length} blocks)`);
+      
+      // Delay between chunks to prevent rate limiting
+      if (i < chunks.length - 1) {
+        await delay(DELAYS.NOTION_HEAVY);
+      }
+    } catch (error) {
+      console.error(`Failed to add chunk ${i + 1}/${chunks.length}:`, error);
+      throw error;
+    }
+  }
+  
+  console.log(`Successfully added all ${blocks.length} blocks in ${chunks.length} chunks`);
+  return true;
+}
 
 interface AsyncProcessingOptions {
   notion: Client;
@@ -282,7 +333,7 @@ export async function findAndReplacePlaceholder(
       return false;
     }
     
-    await delay(NOTION_DELAY);
+    await delay(DELAYS.NOTION_BASIC);
     
     // Add new blocks in its place with retry on 409
     let appendSuccess = false;
@@ -364,7 +415,8 @@ export async function updateHomepageWithIntro(
 }
 
 /**
- * Process full report content and replace truncated content
+ * Process full report content and replace truncated content with chunked processing
+ * Handles large content that exceeds Notion's 100-block limit
  */
 export async function processFullReportContent(
   notion: Client,
@@ -375,6 +427,7 @@ export async function processFullReportContent(
   try {
     // Split content into manageable chunks (Notion has a 2000 char limit per block)
     const chunks = fullContent.match(/.{1,1900}/g) || [fullContent];
+    console.log(`Processing ${reportType} report: ${chunks.length} blocks`);
     
     // Convert chunks to Notion blocks
     const blocks = chunks.map(chunk => ({
@@ -386,26 +439,63 @@ export async function processFullReportContent(
       }
     }));
     
-    // Find and replace the truncation message
-    const success = await findAndReplacePlaceholder(
-      notion,
-      pageId,
-      "content truncated for quick loading",
-      blocks
-    );
-    
-    if (success) {
-      console.log(`[ASYNC] Successfully updated ${reportType} report with full content (${chunks.length} blocks)`);
+    if (chunks.length <= 100) {
+      // Small content: use existing logic
+      const success = await findAndReplacePlaceholder(
+        notion,
+        pageId,
+        "content truncated for quick loading",
+        blocks
+      );
+      
+      if (success) {
+        console.log(`[ASYNC] Successfully updated ${reportType} report with full content (${chunks.length} blocks)`);
+        return true;
+      } else {
+        console.warn(`[ASYNC] Could not find truncation placeholder in ${reportType} report, appending content`);
+        // Fallback: append the full content using chunked processing
+        await addBlocksInChunks(notion, pageId, blocks);
+        return true;
+      }
     } else {
-      console.warn(`[ASYNC] Could not find truncation placeholder in ${reportType} report, appending content`);
-      // Fallback: append the full content
-      await notion.blocks.children.append({
-        block_id: pageId,
-        children: blocks
-      });
+      // Large content: use progressive loading with chunked processing
+      console.log(`Large ${reportType} content detected (${chunks.length} blocks), using progressive loading...`);
+      
+      // Replace placeholder with loading message
+      const loadingBlock = [{
+        type: "callout" as const,
+        callout: {
+          icon: { type: "emoji" as const, emoji: "⏳" },
+          rich_text: [{
+            text: { content: `Loading full ${reportType} content... (${chunks.length} sections)` }
+          }]
+        }
+      }];
+      
+      const placeholderReplaced = await findAndReplacePlaceholder(
+        notion,
+        pageId,
+        "content truncated for quick loading",
+        loadingBlock
+      );
+      
+      if (!placeholderReplaced) {
+        console.warn(`Placeholder not found, appending loading message`);
+        await notion.blocks.children.append({
+          block_id: pageId,
+          children: loadingBlock
+        });
+      }
+      
+      await delay(DELAYS.NOTION_BASIC);
+      
+      // Process content in chunks of 90 blocks (leave buffer below 100 limit)
+      await addBlocksInChunks(notion, pageId, blocks, 90);
+      
+      console.log(`[SUCCESS] Progressive loading complete for ${reportType} report`);
+      return true;
     }
     
-    return true;
   } catch (error) {
     console.error(`Error processing full ${reportType} report content:`, error);
     return false;

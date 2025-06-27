@@ -27,11 +27,18 @@ const notion = new Client({
   auth: process.env.NOTION_API_KEY,
 });
 
-// Add delay utility for sequential operations
-const NOTION_DELAY = 100; // 100ms between Notion operations
+// Updated delay constants for different operation types
+const DELAYS = {
+  NOTION_BASIC: 100,           // Basic operations
+  NOTION_DATABASE: 1000,       // Database operations
+  NOTION_HEAVY: 2000,         // Heavy operations (large content)
+  DATABASE_CREATION: 3000,     // After database creation
+  BATCH_PROCESSING: 500        // Between batch items
+};
+
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Retry wrapper for 409 conflicts
+// Enhanced retry wrapper with operation-specific delays
 const notionCreateWithRetry = async <T>(
   createFunction: () => Promise<T>, 
   operation: string,
@@ -42,7 +49,16 @@ const notionCreateWithRetry = async <T>(
       return await createFunction();
     } catch (error: any) {
       if (error.status === 409 && attempt < maxRetries) {
-        const retryDelay = attempt * 500; // Exponential backoff: 500ms, 1s, 1.5s
+        // Enhanced backoff for different operation types
+        let retryDelay = attempt * 1000; // Base: 1s, 2s, 3s
+        
+        if (operation.includes('database')) {
+          retryDelay = attempt * 2000; // Database ops: 2s, 4s, 6s
+        }
+        if (operation.includes('Quote creation')) {
+          retryDelay = attempt * 1500; // Quote ops: 1.5s, 3s, 4.5s
+        }
+        
         console.warn(`[RETRY ${attempt}/${maxRetries}] 409 conflict in ${operation}, retrying in ${retryDelay}ms...`);
         await delay(retryDelay);
         continue;
@@ -324,7 +340,7 @@ export async function POST(request: Request) {
     );
 
     // Add delay after parent page creation
-    await delay(NOTION_DELAY);
+    await delay(DELAYS.NOTION_BASIC);
 
     // 3. Create branded homepage (quick, with placeholders)
     const brandedHomepage = await notionCreateWithRetry(
@@ -349,7 +365,7 @@ export async function POST(request: Request) {
     const homepageUrl = `https://notion.so/${brandedHomepage.id.replace(/-/g, '')}`;
 
     // Add delay after homepage creation
-    await delay(NOTION_DELAY);
+    await delay(DELAYS.NOTION_BASIC);
 
     // 4. Update parent page with homepage link
     await notionCreateWithRetry(
@@ -361,7 +377,7 @@ export async function POST(request: Request) {
     );
 
     // Add delay after parent page update
-    await delay(NOTION_DELAY);
+    await delay(DELAYS.NOTION_BASIC);
 
     // 5. Create report pages sequentially (prevent timing conflicts)
     const results = {
@@ -385,7 +401,7 @@ export async function POST(request: Request) {
         url: `https://notion.so/${strategyPage.id.replace(/-/g, '')}`,
         title: 'Strategy Report'
       });
-      await delay(NOTION_DELAY);
+      await delay(DELAYS.NOTION_BASIC);
     }
 
     if (comprehensiveReport) {
@@ -400,7 +416,7 @@ export async function POST(request: Request) {
         url: `https://notion.so/${comprehensivePage.id.replace(/-/g, '')}`,
         title: 'Comprehensive Analysis'
       });
-      await delay(NOTION_DELAY);
+      await delay(DELAYS.NOTION_BASIC);
     }
 
     // 6. Add basic homepage content with placeholders
@@ -458,7 +474,7 @@ export async function POST(request: Request) {
     });
 
     // Add delay after homepage blocks
-    await delay(NOTION_DELAY);
+    await delay(DELAYS.NOTION_BASIC);
 
     const responseTime = Date.now() - startTime;
     console.log(`[QUICK RESPONSE] Initial setup complete in ${responseTime}ms`);
