@@ -478,7 +478,7 @@ async function selectSubreddits(candidates: SubredditCandidate[]): Promise<Subre
   })
   
   console.log()
-  console.log(chalk.yellow('Enter the numbers of subreddits to select (comma-separated, max 8):'))
+  console.log(chalk.yellow('Enter the numbers of subreddits to select (comma-separated):'))
   console.log(chalk.gray('Example: 1,3,5,7'))
   
   const selection = await ask(chalk.cyan('Selection: '))
@@ -488,7 +488,6 @@ async function selectSubreddits(candidates: SubredditCandidate[]): Promise<Subre
       .split(',')
       .map(s => parseInt(s.trim()) - 1)
       .filter(i => i >= 0 && i < candidates.length)
-      .slice(0, 8) // Max 8 selections
     
     if (indices.length === 0) {
       console.log(chalk.red('No valid selections made. Using top 5 candidates.'))

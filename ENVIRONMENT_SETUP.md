@@ -6,8 +6,8 @@ Create a `.env` file in your project root with these variables:
 
 ```bash
 # Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+NEXT_PUBLIC_SUPABASE_URL=https://ojvdxjcziacptbcypexl.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=
 
 # API Configuration
 API_BASE_URL=http://localhost:3000

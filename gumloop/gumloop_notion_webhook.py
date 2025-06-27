@@ -8,7 +8,6 @@ def function(meta, strategy, run_id):
     
     # Set default values since we don't have metadata
     email = 'harrison@dododigital.ai'
-    # Use the run_id parameter passed to the function
     
     # Both meta and strategy are markdown reports
     # meta = comprehensive report (8-10 pages)

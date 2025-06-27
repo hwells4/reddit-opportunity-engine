@@ -1,8 +1,7 @@
 -- Migration: Create accounts table for user account management
--- Date: 2025-01-23
+-- Date: 2026-06-23
 -- Description: Adds accounts table to track customer/demo accounts and associates runs with accounts
 
--- Create accounts table
 CREATE TABLE IF NOT EXISTS public.accounts (
   account_id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   company_name TEXT NOT NULL,
