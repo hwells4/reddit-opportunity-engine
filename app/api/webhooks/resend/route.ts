@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from '@supabase/supabase-js';
 import { RedditValidator } from '../../../../lib/discovery/reddit-validator';
+import { randomUUID } from 'crypto';
 
 function getSupabaseClient() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -209,8 +210,9 @@ Return the modified payload as valid JSON.`;
       modifiedPayload = await validateAndAdjustSubreddits(modifiedPayload);
     }
     
-    // Generate new run_id for the resend
-    const newRunId = `${run_id}-resend-${Date.now()}`;
+    // Generate new proper UUID for the resend
+    const newRunId = randomUUID();
+    console.log(`🆔 Generated new UUID for resend: ${newRunId} (from original: ${run_id})`);
     
     // Create database entry for the new run to prevent system breakage
     console.log('📋 Creating database entry for resent webhook...');
@@ -239,7 +241,7 @@ Return the modified payload as valid JSON.`;
     // Send to each workflow
     for (let i = 0; i < workflows.length; i++) {
       const workflow = workflows[i];
-      const testRunId = workflows.length > 1 ? `${newRunId}-${workflow.workflow_name.replace(/\s+/g, '-').toLowerCase()}` : newRunId;
+      const testRunId = workflows.length > 1 ? randomUUID() : newRunId;
       
       // Prepare payload for this workflow
       let testPayload: any;
