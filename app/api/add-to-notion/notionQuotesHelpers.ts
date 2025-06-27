@@ -98,9 +98,9 @@ export async function createQuotesDatabase(
  */
 export function formatQuoteForNotion(quote: any): any {
   // Extract Reddit URL from the post if available
-  const redditUrl = quote.post?.url || `https://reddit.com/r/${quote.post?.subreddit || 'unknown'}`;
+  const redditUrl = quote.post?.url || (quote.post?.subreddit ? `https://reddit.com/r/${quote.post.subreddit}` : null);
   
-  return {
+  const properties: any = {
     "Quote": {
       title: [
         {
@@ -117,19 +117,29 @@ export function formatQuoteForNotion(quote: any): any {
     "Theme": {
       select: { name: quote.theme || "general" }
     },
-    "Reddit Link": {
-      url: redditUrl
-    },
     "Relevance Score": {
       number: quote.relevance_score || 0
     },
     "Date Added": {
-      date: { start: quote.inserted_at || new Date().toISOString() }
-    },
-    "Post ID": {
-      rich_text: [{ text: { content: quote.post_id || "" } }]
+      date: { start: quote.inserted_at || new Date().toISOString().split('T')[0] }
     }
   };
+
+  // Only add Reddit Link if we have a valid URL
+  if (redditUrl) {
+    properties["Reddit Link"] = {
+      url: redditUrl
+    };
+  }
+
+  // Only add Post ID if we have one
+  if (quote.post_id) {
+    properties["Post ID"] = {
+      rich_text: [{ text: { content: quote.post_id } }]
+    };
+  }
+
+  return properties;
 }
 
 /**
@@ -152,46 +162,25 @@ export async function addQuotesToNotion(
   for (let i = 0; i < quotes.length; i += batchSize) {
     const batch = quotes.slice(i, i + batchSize);
     
-    // Process each quote in the batch with retry logic
+    // Process each quote in the batch
     const promises = batch.map(async (quote) => {
-      const maxRetries = 3;
-      let lastError: any;
-      
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const properties = formatQuoteForNotion(quote);
-          
-          await notion.pages.create({
-            parent: { database_id: databaseId },
-            properties
-          });
-          
-          results.count++;
-          return; // Success, exit retry loop
-        } catch (error: any) {
-          lastError = error;
-          
-          // If it's a conflict error (409), wait and retry
-          if (error.status === 409 && attempt < maxRetries) {
-            console.warn(`[QUOTE RETRY] Attempt ${attempt} failed with 409 conflict for quote ${quote.quote_id}, retrying...`);
-            // Exponential backoff: wait longer on each retry
-            await new Promise(resolve => setTimeout(resolve, attempt * 500));
-            continue;
-          }
-          
-          // If it's not a conflict error or we've exhausted retries, break
-          break;
-        }
+      try {
+        const properties = formatQuoteForNotion(quote);
+        
+        await notion.pages.create({
+          parent: { database_id: databaseId },
+          properties
+        });
+        
+        results.count++;
+      } catch (error: any) {
+        console.error(`Error adding quote to Notion:`, error);
+        results.errors.push({
+          quote_id: quote.quote_id,
+          error: error.message
+        });
+        results.success = false;
       }
-      
-      // If we get here, all retries failed
-      console.error(`Error adding quote to Notion after ${maxRetries} attempts:`, lastError);
-      results.errors.push({
-        quote_id: quote.quote_id,
-        error: lastError.message,
-        attempts: maxRetries
-      });
-      results.success = false;
     });
 
     // Wait for batch to complete
