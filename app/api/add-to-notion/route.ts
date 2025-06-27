@@ -246,7 +246,7 @@ export async function POST(request: Request) {
     const reportType = extractReportType(metadata);
 
     // 2. Create parent page in database (quick)
-    const parentPageTitle = generateParentPageTitle({ 
+    const rawParentPageTitle = generateParentPageTitle({ 
       email: accountData?.email || email, 
       metadata, 
       reportType, 
@@ -254,23 +254,49 @@ export async function POST(request: Request) {
       accountData 
     });
 
-    // Create parent page in database
-    const parentPage = await notion.pages.create({
-      parent: { database_id: process.env.NOTION_DATABASE_ID! },
-      properties: {
-        Company: {
-          title: [{ text: { content: parentPageTitle } }]
-        },
-        "Report Type": {
-          rich_text: [{ text: { content: reportType || '' } }]
-        },
-        ...(email && {
-          "Contact Email": {
-            email: email
-          }
-        })
-      }
+    // Sanitize and validate inputs
+    const parentPageTitle = rawParentPageTitle ? 
+      rawParentPageTitle.substring(0, 100).replace(/[^\w\s\-&.,()]/g, '') : 
+      'Untitled Report';
+    
+    const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    
+    console.log('Creating parent page with:', {
+      parentPageTitle,
+      reportType: reportType || '',
+      email: email || 'none',
+      titleLength: parentPageTitle.length
     });
+
+    // Create parent page in database
+    let parentPage;
+    try {
+      parentPage = await notion.pages.create({
+        parent: { database_id: process.env.NOTION_DATABASE_ID! },
+        properties: {
+          Company: {
+            title: [{ text: { content: parentPageTitle } }]
+          },
+          "Report Type": {
+            rich_text: [{ text: { content: (reportType || '').substring(0, 200) } }]
+          },
+          ...(email && isValidEmail(email) && {
+            "Contact Email": {
+              email: email
+            }
+          })
+        }
+      });
+    } catch (error: any) {
+      console.error('Notion parent page creation failed:', error);
+      console.error('Properties sent:', {
+        parentPageTitle,
+        reportType: reportType || '',
+        email: email || 'none',
+        hasValidEmail: email ? isValidEmail(email) : false
+      });
+      throw new Error(`Failed to create parent page: ${error.message}`);
+    }
 
     // 3. Create branded homepage (quick, with placeholders)
     const brandedHomepage = await notion.pages.create({
