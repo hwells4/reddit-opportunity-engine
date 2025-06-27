@@ -14,6 +14,9 @@ import {
   processQuotesAsync,
   createPlaceholderBlock,
   createLoadingBlock,
+  updateHomepageWithIntro,
+  findAndReplacePlaceholder,
+  processFullReportContent,
 } from "./notionAsyncHelpers";
 // import { createBlocksFromMarkdown } from "./markdownParser"; // Will be used when placeholder replacement is implemented
 import { fetchRunStatistics } from "./notionQuotesHelpers";
@@ -508,8 +511,10 @@ export async function POST(request: Request) {
             comprehensiveReport,
             accountData
           });
-          // TODO: Implement placeholder replacement and apply intro blocks
-          console.log(`[ASYNC] Generated homepage intro (${intro.length} chars)`);
+          
+          // Apply the intro to the homepage by replacing the placeholder
+          const success = await updateHomepageWithIntro(notion, brandedHomepage.id, intro);
+          console.log(`[ASYNC] Generated and applied homepage intro (${intro.length} chars), success: ${success}`);
           return intro;
         }) :
         generateHomepageIntroAsync({
@@ -520,7 +525,9 @@ export async function POST(request: Request) {
           accountData
         })
           .then(async (intro) => {
-            console.log(`[ASYNC] Generated homepage intro (${intro.length} chars)`);
+            // Apply the intro to the homepage by replacing the placeholder
+            const success = await updateHomepageWithIntro(notion, brandedHomepage.id, intro);
+            console.log(`[ASYNC] Generated and applied homepage intro (${intro.length} chars), success: ${success}`);
           })
           .catch(err => console.error('[ASYNC] Failed to generate intro:', err)),
 
@@ -539,7 +546,27 @@ export async function POST(request: Request) {
           console.log(`[ASYNC] Quotes processed:`, result);
           return result;
         })
-        : Promise.resolve()
+        : Promise.resolve(),
+
+      // Process full report content in background (without status tracking for simplicity)
+      ...results.childPages.map(page => 
+        (async () => {
+          const reportContent = page.title.includes('Strategy') ? strategyReport : comprehensiveReport;
+          const reportType = page.title.includes('Strategy') ? 'strategy' : 'comprehensive';
+          
+          if (reportContent) {
+            const success = await processFullReportContent(
+              notion,
+              page.id,
+              reportContent,
+              reportType
+            );
+            console.log(`[ASYNC] Full ${reportType} content processed, success: ${success}`);
+            return success;
+          }
+          return false;
+        })()
+      )
     ]);
 
     // Return success immediately

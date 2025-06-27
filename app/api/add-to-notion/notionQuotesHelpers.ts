@@ -1,6 +1,39 @@
 // Notion helper functions for managing quotes database and tables
 import { Client } from "@notionhq/client";
 
+// Add delay utility for sequential operations
+const NOTION_DELAY = 100; // 100ms between Notion operations
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Retry wrapper for 409 conflicts (same as in route.ts)
+const notionCreateWithRetry = async <T>(
+  createFunction: () => Promise<T>, 
+  operation: string,
+  maxRetries = 3
+): Promise<T> => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await createFunction();
+    } catch (error: any) {
+      if (error.status === 409 && attempt < maxRetries) {
+        const retryDelay = attempt * 500; // Exponential backoff: 500ms, 1s, 1.5s
+        console.warn(`[RETRY ${attempt}/${maxRetries}] 409 conflict in ${operation}, retrying in ${retryDelay}ms...`);
+        await delay(retryDelay);
+        continue;
+      }
+      // Re-throw if not 409 or max retries exceeded
+      console.error(`[NOTION ERROR] ${operation} failed:`, {
+        status: error.status,
+        message: error.message,
+        attempt,
+        maxRetries
+      });
+      throw error;
+    }
+  }
+  throw new Error(`Retry logic error: should not reach here`);
+};
+
 /**
  * Create a dedicated quotes database for a specific run
  * Each run gets its own database for clean client presentation
@@ -12,7 +45,8 @@ export async function createQuotesDatabase(
 ): Promise<string> {
   try {
     console.log(`Creating quotes database: ${title}`);
-    const newDatabase = await notion.databases.create({
+    const newDatabase = await notionCreateWithRetry(
+      () => notion.databases.create({
       parent: { page_id: parentPageId },
       title: [
         {
@@ -83,7 +117,9 @@ export async function createQuotesDatabase(
           rich_text: {}
         }
       }
-    });
+      }),
+      'Quotes database creation'
+    );
 
     console.log('Created quotes database:', newDatabase.id);
     return newDatabase.id;
@@ -167,10 +203,13 @@ export async function addQuotesToNotion(
       try {
         const properties = formatQuoteForNotion(quote);
         
-        await notion.pages.create({
-          parent: { database_id: databaseId },
-          properties
-        });
+        await notionCreateWithRetry(
+          () => notion.pages.create({
+            parent: { database_id: databaseId },
+            properties
+          }),
+          `Quote creation for ${quote.quote_id || 'unknown'}`
+        );
         
         results.count++;
       } catch (error: any) {

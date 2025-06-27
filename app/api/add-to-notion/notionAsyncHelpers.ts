@@ -9,6 +9,10 @@ import {
 } from "./notionQuotesHelpers";
 import { SupabaseClient } from '@supabase/supabase-js';
 
+// Add delay utility for sequential operations
+const NOTION_DELAY = 100; // 100ms between Notion operations
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 interface AsyncProcessingOptions {
   notion: Client;
   brandedHomepageId: string;
@@ -121,17 +125,28 @@ export async function processQuotesAsync(
     // Get statistics
     const stats = getQuoteStats(quotes);
     
-    // Add quotes link to homepage
+    // Replace quotes placeholder with actual quotes link
     const quotesLinkBlocks = createQuotesLinkBlock(
       `https://notion.so/${quotesDbId.replace(/-/g, '')}`,
       runStats.postsCount,
       quotes.length
     );
     
-    await notion.blocks.children.append({
-      block_id: brandedHomepageId,
-      children: quotesLinkBlocks,
-    });
+    // Try to replace placeholder, fallback to append if not found
+    const replaced = await findAndReplacePlaceholder(
+      notion,
+      brandedHomepageId,
+      "Processing quotes database",
+      quotesLinkBlocks
+    );
+    
+    if (!replaced) {
+      // Fallback: append to end of page if placeholder not found
+      await notion.blocks.children.append({
+        block_id: brandedHomepageId,
+        children: quotesLinkBlocks,
+      });
+    }
     
     return {
       success: addResult.success,
@@ -209,27 +224,190 @@ export function createLoadingBlock(message: string): any {
 }
 
 /**
- * Replace placeholder blocks with actual content
+ * Find and replace placeholder blocks with actual content
  */
-export async function replacePlaceholderBlocks(
+export async function findAndReplacePlaceholder(
   notion: Client,
   pageId: string,
-  placeholderBlockId: string,
+  placeholderText: string,
   newBlocks: any[]
 ): Promise<boolean> {
   try {
-    // Delete the placeholder block
-    await notion.blocks.delete({ block_id: placeholderBlockId });
-    
-    // Add new blocks
-    await notion.blocks.children.append({
+    // Get all blocks from the page
+    const response = await notion.blocks.children.list({
       block_id: pageId,
-      children: newBlocks,
+      page_size: 100
     });
+    
+    // Find the placeholder block
+    const placeholderBlock = response.results.find((block: any) => {
+      if (block.type === 'callout' && block.callout?.rich_text?.[0]?.text?.content) {
+        return block.callout.rich_text[0].text.content.includes(placeholderText);
+      }
+      if (block.type === 'paragraph' && block.paragraph?.rich_text?.[0]?.text?.content) {
+        return block.paragraph.rich_text[0].text.content.includes(placeholderText);
+      }
+      return false;
+    });
+    
+    if (!placeholderBlock) {
+      console.warn(`[PLACEHOLDER] "${placeholderText}" not found in page ${pageId}. Available blocks:`, 
+        response.results.map((block: any) => ({
+          type: block.type,
+          content: block[block.type]?.rich_text?.[0]?.text?.content?.substring(0, 50) + '...' || 'no text'
+        }))
+      );
+      return false;
+    }
+    
+    // Delete the placeholder block with retry on 409
+    let deleteSuccess = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await notion.blocks.delete({ block_id: placeholderBlock.id });
+        deleteSuccess = true;
+        break;
+      } catch (deleteError: any) {
+        if (deleteError.status === 409 && attempt < 3) {
+          console.warn(`[RETRY ${attempt}/3] 409 conflict deleting placeholder, retrying...`);
+          await delay(attempt * 300);
+          continue;
+        }
+        throw deleteError;
+      }
+    }
+    
+    if (!deleteSuccess) {
+      console.error(`Failed to delete placeholder after 3 attempts`);
+      return false;
+    }
+    
+    await delay(NOTION_DELAY);
+    
+    // Add new blocks in its place with retry on 409
+    let appendSuccess = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await notion.blocks.children.append({
+          block_id: pageId,
+          children: newBlocks,
+        });
+        appendSuccess = true;
+        break;
+      } catch (appendError: any) {
+        if (appendError.status === 409 && attempt < 3) {
+          console.warn(`[RETRY ${attempt}/3] 409 conflict appending blocks, retrying...`);
+          await delay(attempt * 300);
+          continue;
+        }
+        throw appendError;
+      }
+    }
+    
+    if (appendSuccess) {
+      console.log(`[SUCCESS] Replaced placeholder "${placeholderText}" with ${newBlocks.length} new blocks`);
+      return true;
+    } else {
+      console.error(`Failed to append new blocks after 3 attempts`);
+      return false;
+    }
+  } catch (error) {
+    console.error(`[ERROR] Replacing placeholder "${placeholderText}":`, {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      pageId,
+      blockCount: newBlocks.length
+    });
+    return false;
+  }
+}
+
+/**
+ * Convert text content to Notion blocks with basic formatting
+ */
+export function textToNotionBlocks(text: string): any[] {
+  if (!text) return [];
+  
+  // Split text into paragraphs
+  const paragraphs = text.split('\n\n').filter(p => p.trim());
+  
+  return paragraphs.map(paragraph => ({
+    type: "paragraph",
+    paragraph: {
+      rich_text: [{
+        text: { content: paragraph.trim() }
+      }]
+    }
+  }));
+}
+
+/**
+ * Update homepage with AI-generated intro content
+ */
+export async function updateHomepageWithIntro(
+  notion: Client,
+  homepageId: string,
+  introContent: string
+): Promise<boolean> {
+  try {
+    const introBlocks = textToNotionBlocks(introContent);
+    
+    return await findAndReplacePlaceholder(
+      notion,
+      homepageId,
+      "Generating personalized introduction",
+      introBlocks
+    );
+  } catch (error) {
+    console.error('Error updating homepage with intro:', error);
+    return false;
+  }
+}
+
+/**
+ * Process full report content and replace truncated content
+ */
+export async function processFullReportContent(
+  notion: Client,
+  pageId: string,
+  fullContent: string,
+  reportType: 'strategy' | 'comprehensive'
+): Promise<boolean> {
+  try {
+    // Split content into manageable chunks (Notion has a 2000 char limit per block)
+    const chunks = fullContent.match(/.{1,1900}/g) || [fullContent];
+    
+    // Convert chunks to Notion blocks
+    const blocks = chunks.map(chunk => ({
+      type: "paragraph" as const,
+      paragraph: {
+        rich_text: [{
+          text: { content: chunk }
+        }]
+      }
+    }));
+    
+    // Find and replace the truncation message
+    const success = await findAndReplacePlaceholder(
+      notion,
+      pageId,
+      "content truncated for quick loading",
+      blocks
+    );
+    
+    if (success) {
+      console.log(`[ASYNC] Successfully updated ${reportType} report with full content (${chunks.length} blocks)`);
+    } else {
+      console.warn(`[ASYNC] Could not find truncation placeholder in ${reportType} report, appending content`);
+      // Fallback: append the full content
+      await notion.blocks.children.append({
+        block_id: pageId,
+        children: blocks
+      });
+    }
     
     return true;
   } catch (error) {
-    console.error('Error replacing placeholder blocks:', error);
+    console.error(`Error processing full ${reportType} report content:`, error);
     return false;
   }
 }
