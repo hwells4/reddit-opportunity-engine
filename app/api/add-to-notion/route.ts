@@ -254,6 +254,7 @@ export async function POST(request: Request) {
       accountData 
     });
 
+    // Create parent page in database
     const parentPage = await notion.pages.create({
       parent: { database_id: process.env.NOTION_DATABASE_ID! },
       properties: {
@@ -263,9 +264,11 @@ export async function POST(request: Request) {
         "Report Type": {
           rich_text: [{ text: { content: reportType || '' } }]
         },
-        "Contact Email": {
-          email: email || ''
-        }
+        ...(email && {
+          "Contact Email": {
+            email: email
+          }
+        })
       }
     });
 
