@@ -210,13 +210,10 @@ Return the modified payload as valid JSON.`;
       modifiedPayload = await validateAndAdjustSubreddits(modifiedPayload);
     }
     
-    // Generate new proper UUID for the resend
-    const newRunId = randomUUID();
-    console.log(`🆔 Generated new UUID for resend: ${newRunId} (from original: ${run_id})`);
-    
     // Create database entry for the new run to prevent system breakage
     console.log('📋 Creating database entry for resent webhook...');
-    await createResendRunViaAPI(run_id, newRunId, modifiedPayload);
+    const newRunId = await createResendRunViaAPI(run_id, modifiedPayload);
+    console.log(`🆔 Created new run: ${newRunId} (from original: ${run_id})`);
     
     // Small delay to ensure database entry is committed before webhook send
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -259,7 +256,9 @@ Return the modified payload as valid JSON.`;
     // Send to each workflow
     for (let i = 0; i < workflows.length; i++) {
       const workflow = workflows[i];
-      const testRunId = workflows.length > 1 ? randomUUID() : newRunId;
+      // For A/B testing, we use the same run_id for all workflows
+      // This ensures webhook storage works correctly
+      const testRunId = newRunId;
       
       // Prepare payload for this workflow
       let testPayload: any;
@@ -510,7 +509,7 @@ async function validateAndAdjustSubreddits(payload: any): Promise<any> {
 }
 
 // Create database entry for resent webhook using existing API
-async function createResendRunViaAPI(originalRunId: string, newRunId: string, modifiedPayload: any): Promise<void> {
+async function createResendRunViaAPI(originalRunId: string, modifiedPayload: any): Promise<string> {
   const supabaseClient = getSupabaseClient();
   
   try {
@@ -541,8 +540,8 @@ async function createResendRunViaAPI(originalRunId: string, newRunId: string, mo
       : "https://reddit-opportunity-engine-production.up.railway.app";
     
     // Prepare run data for the existing API
+    // NOTE: Do NOT include run_id - the API generates its own
     const runData = {
-      run_id: newRunId,
       user_question: originalRun.user_question,
       problem_area: originalRun.problem_area,
       target_audience: originalRun.target_audience,
@@ -571,10 +570,15 @@ async function createResendRunViaAPI(originalRunId: string, newRunId: string, mo
     
     const result = await response.json();
     
-    console.log(`✅ Created database entry for resent run: ${newRunId}`);
+    // CRITICAL: Return the actual run_id from the API, not our pre-generated one
+    const actualRunId = result.run_id;
+    
+    console.log(`✅ Created database entry for resent run: ${actualRunId}`);
     console.log(`   Inherited from: ${originalRunId}`);
     console.log(`   Account: ${originalRun.account_id}`);
     console.log(`   Subreddits: ${runData.subreddits?.join(', ') || 'none'}`);
+    
+    return actualRunId; // Return the actual run_id
     
   } catch (error) {
     console.error('❌ Error creating resend run entry:', error);
