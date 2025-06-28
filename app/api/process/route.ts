@@ -325,40 +325,28 @@ class QuoteExtractor {
   private static isValidQuote(quote: ParsedQuote): boolean {
     const text = quote.text.trim();
     
-    // Check minimum content requirements
-    if (text.length < 15) return false;
+    // Basic content requirements
+    if (text.length < 10) return false;
     
-    // Reject quotes with XML syntax
-    if (text.includes('<') || text.includes('>') || text.includes('</')) return false;
+    // Reject XML fragments and tags
+    if (text.includes('<') || text.includes('</') || text.includes('/>')) return false;
     
-    // Reject quotes that are obviously analysis metadata
+    // Reject ONLY obvious analysis metadata - be very specific
     const metadataPatterns = [
-      /^relevance_score/i,
-      /^indicator/i,
-      /^classification/i,
-      /^\d+\s*-\s*(?:the|this)/i, // Pattern like "8 - The post discusses..."
-      /analysis shows/i,
-      /the post discusses/i,
-      /this content/i
+      /^relevance_score[:\s]/i,
+      /^indicator[:\s]/i,
+      /^classification[:\s]/i,
+      /^category[:\s]/i,
+      /^sentiment[:\s]/i,
+      /^\d+\s*-\s*(the|this|analysis)/i, // "8 - The post discusses..."
+      /^(analysis shows|the analysis|this analysis)/i,
+      /^(the post discusses|this post discusses)/i
     ];
     
+    // Only reject if it clearly matches metadata patterns
     if (metadataPatterns.some(pattern => pattern.test(text))) return false;
     
-    // Reject quotes that don't have user-like characteristics
-    const hasUserIndicators = [
-      /\b(i|my|me|we|our|us)\b/i,
-      /\b(love|hate|frustrated|annoying|difficult|easy|wish|need|want|hope)\b/i,
-      /\b(works?|doesn't work|broken|problem|issue|solution)\b/i,
-      /["'].*["']/,  // Contains quoted text
-      /\$\d+/,       // Contains pricing
-      /\w+\.\w+/     // Contains domain/email-like patterns
-    ];
-    
-    // If quote doesn't have any user indicators and is short, likely metadata
-    if (text.length < 50 && !hasUserIndicators.some(pattern => pattern.test(text))) {
-      return false;
-    }
-    
+    // Accept everything else - let the AI determine what's valuable
     return true;
   }
 
