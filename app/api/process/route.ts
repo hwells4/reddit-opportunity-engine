@@ -381,60 +381,38 @@ class QuoteExtractor {
       
       const sectionContent = sectionMatch[1];
       
-      // Enhanced pattern to capture sentiment, theme, and justification attributes
-      const enhancedPattern = /<quote\s+is_question_relevant="(true|false)"\s+sentiment="([^"]*?)"\s+theme="([^"]*?)"\s+justification="([^"]*?)"[^>]*>(.*?)<\/quote>/g;
-      const basicPattern = /<quote\s+is_question_relevant="(true|false)"\s+sentiment="([^"]*?)"\s+theme="([^"]*?)"[^>]*>(.*?)<\/quote>/g;
-      const fallbackPattern = /<quote[^>]*>(.*?)<\/quote>/g;
+      // Find all quote tags and extract attributes flexibly to preserve AI justifications
+      const quotePattern = /<quote[^>]*>(.*?)<\/quote>/g;
       
-      const patterns = [enhancedPattern, basicPattern, fallbackPattern];
-      
-      for (const pattern of patterns) {
-        let match: RegExpExecArray | null;
-        while ((match = pattern.exec(sectionContent)) !== null) {
-          let text, isRelevant, sentiment, theme, justification;
-          
-          if (pattern === enhancedPattern) {
-            // Full attribute extraction with justification
-            isRelevant = match[1] === 'true';
-            sentiment = match[2] || 'neutral';
-            theme = match[3] || 'general';
-            justification = match[4] || undefined;
-            text = match[5];
-          } else if (pattern === basicPattern) {
-            // Basic extraction without justification
-            isRelevant = match[1] === 'true';
-            sentiment = match[2] || 'neutral';
-            theme = match[3] || 'general';
-            justification = undefined;
-            text = match[4];
-          } else {
-            // Fallback extraction
-            isRelevant = true;
-            sentiment = 'neutral';
-            theme = 'general';
-            justification = undefined;
-            text = match[1];
-          }
-          
-          text = this.cleanQuoteText(text);
-          
-          if (text.length > 10) {
-            const quote: any = {
-              text: text,
-              is_question_relevant: isRelevant,
-              sentiment: sentiment || 'neutral',
-              theme: theme || 'general'
-            };
-            
-            if (justification) {
-              quote.justification = justification;
-            }
-            
-            quotes.push(quote);
-          }
-        }
+      let match: RegExpExecArray | null;
+      while ((match = quotePattern.exec(sectionContent)) !== null) {
+        const fullTag = match[0];
+        const text = this.cleanQuoteText(match[1]);
         
-        if (quotes.length > 0) break;
+        if (text.length > 10) {
+          // Extract attributes individually using flexible patterns (any order)
+          const isRelevant = /is_question_relevant="(true|false)"/.exec(fullTag)?.[1] === 'true' || true;
+          const sentiment = /sentiment="([^"]*?)"/.exec(fullTag)?.[1] || 'neutral';
+          const theme = /theme="([^"]*?)"/.exec(fullTag)?.[1] || 'general';
+          const justification = /justification="([^"]*?)"/.exec(fullTag)?.[1];
+          
+          const quote: any = {
+            text: text,
+            is_question_relevant: isRelevant,
+            sentiment: sentiment,
+            theme: theme
+          };
+          
+          // Only add justification if we actually found one from the AI
+          if (justification && justification.trim().length > 0) {
+            quote.justification = justification.trim();
+            console.log(`✅ Extracted AI justification for quote: "${text.substring(0, 50)}..." → "${justification.substring(0, 100)}..."`);
+          } else {
+            console.log(`⚠️ No AI justification found for quote: "${text.substring(0, 50)}..." (will use fallback)`);
+          }
+          
+          quotes.push(quote);
+        }
       }
       
     } catch (error) {
@@ -891,9 +869,9 @@ class DatabaseService {
       const normalizedRelevanceScore = Math.max(0.0, Math.min(1.0, postRelevanceScore / 10.0));
 
       const quotesToInsert = quotes.map((quote) => {
-        // Use AI-provided justification if available, otherwise generate a comprehensive one
+        // Use AI-provided justification if available, otherwise use a simple fallback
         const justification = (quote as any).justification || 
-          `${AnalysisParser.generateRelevanceJustification(quote, postRelevanceScore, extractionMethod)} Extracted using ${extractionMethod} method.`;
+          `Quote selected based on ${quote.category} category and ${quote.sentiment} sentiment analysis.`;
         
         return {
           quote_id: randomUUID(),

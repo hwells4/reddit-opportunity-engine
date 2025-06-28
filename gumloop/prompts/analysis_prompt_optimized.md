@@ -80,15 +80,19 @@ Example:
 
 2) In `<question_relevance_flag>` tags, output **"TRUE"** if this post contains information directly relevant to the **User Question/Goal**, otherwise output **"FALSE"**. If TRUE, briefly explain why in 1 sentence.
 
-3) In `<user_needs>` tags, identify ALL specific problems, tasks, or goals users are trying to accomplish related to our **Core Context**. Extract DIRECT QUOTES EXACTLY AS WRITTEN - do not paraphrase, modify, or change the user's words in any way. Copy quotes character-for-character. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[comprehensive explanation including context and relevance]"`. Example: <quote is_question_relevant="true" sentiment="negative" theme="frustration" justification="This quote demonstrates a clear pain point with current solutions and directly relates to the core problem area. The user's frustration indicates market opportunity and validates the need for better tools in this space.">This feature is crucial for solving the user's stated problem.</quote>*
+3) In `<user_needs>` tags, identify ALL specific problems, tasks, or goals users are trying to accomplish related to our **Core Context**. Extract DIRECT QUOTES EXACTLY AS WRITTEN - do not paraphrase, modify, or change the user's words in any way. Copy quotes character-for-character. 
+
+**JUSTIFICATION REQUIREMENTS**: For each quote, write a natural, conversational explanation of WHY this quote matters. Think like a researcher explaining to a colleague: What's the user's situation? What problem are they facing? What does this tell us about market needs? Be specific and unique for each quote - avoid generic phrases.
+
+*For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[natural explanation of what this quote reveals about the user's experience, needs, or situation]"`.*
 
 4) In `<current_solutions>` tags, list ALL tools, methods, or workarounds explicitly mentioned related to the **Core Context**. Note limitations/benefits. *If a solution or its aspect is particularly relevant to the User Question/Goal, add a note: <solution_detail question_focus="true">This part of the solution directly addresses pricing concerns mentioned in the user question.</solution_detail>*
 
-5) In `<user_language>` tags, extract AT LEAST 3-5 DIRECT QUOTES (more if available and distinct) related to the **Core Context**. Copy quotes EXACTLY AS WRITTEN - character-for-character with no modifications. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[comprehensive explanation including context and relevance]"`.*
+5) In `<user_language>` tags, extract AT LEAST 3-5 DIRECT QUOTES (more if available and distinct) related to the **Core Context**. Copy quotes EXACTLY AS WRITTEN - character-for-character with no modifications. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[natural explanation of what this language choice tells us about the user's mindset, experience level, or emotional state]"`.*
 
 *Actively look for language patterns related to the User Question/Goal.*
 
-6) In `<feature_signals>` tags, document ALL specific capabilities or attributes users request, praise, criticize, or imply they need, related to the **Core Context**. Include EXACT QUOTES character-for-character. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[comprehensive explanation including context and relevance]"`.*
+6) In `<feature_signals>` tags, document ALL specific capabilities or attributes users request, praise, criticize, or imply they need, related to the **Core Context**. Include EXACT QUOTES character-for-character. *For each quote, add attributes `is_question_relevant="true/false"`, `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[natural explanation of what this feature request or opinion reveals about user priorities and unmet needs]"`.*
 
 7) In `<audience_indicators>` tags, note user roles, experience, context, demographics. *Highlight indicators relevant to the User Question/Goal (e.g., if the question is about enterprise users, note mentions of company size).* (extract all, then note/attribute if question-relevant)
 
@@ -102,7 +106,7 @@ Example:
 
 - Do NOT use JSON format at any point
 
-- ALL quotes must have sentiment, theme, and justification attributes: `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[comprehensive explanation of relevance and context - can be multiple sentences]"`
+- ALL quotes must have sentiment, theme, and justification attributes: `sentiment="positive/negative/neutral"`, `theme="[specific theme]"`, and `justification="[Write a natural explanation of WHY this quote matters for our research. Be specific about what insight it provides. Each justification should be unique and contextual - explain the user's situation, what problem they're facing, or what need they're expressing. DO NOT mention extraction methods or technical details.]"`
 
 - ALL quotes must have a question relevance flag: `is_question_relevant="true/false"`
 
@@ -121,9 +125,18 @@ CRITICAL FORMATTING REMINDER: You often mix XML tags inside quote text or includ
 
 CRITICAL: DO NOT FORCE INSIGHTS. If there are no relevant quotes in a section, it's perfectly acceptable to have empty sections or "None Found". If a post isn't relevant to the research goals, most quotes probably aren't either. Quality over quantity - only extract genuine, meaningful insights.
 
-Example of CORRECT format:
-<quote is_question_relevant="true" sentiment="frustrated" theme="cost_concerns" justification="This quote reveals a direct pricing concern that aligns with our research into cost barriers. The user's frustration indicates they see value in the service but find the current pricing model unsustainable, suggesting opportunity for alternative pricing strategies.">The subscription is way too expensive for what we get</quote>
+JUSTIFICATION QUALITY: Each justification should read like a researcher's insight note. Write as if you're explaining to a colleague WHY this quote caught your attention. Be conversational, specific, and insightful. Avoid robotic phrases like "baseline relevance" or "structured extraction" - focus on human insights about user behavior, needs, and emotions.
 
-Example of INCORRECT format:
-<quote>relevance_score>8 - This shows frustration with pricing</quote>
+Examples of CORRECT justifications (natural, specific, insightful):
+
+<quote is_question_relevant="true" sentiment="frustrated" theme="cost_concerns" justification="This user is clearly experiencing sticker shock at the current pricing model. Their phrase 'way too expensive' suggests they've evaluated the cost-benefit ratio and found it lacking, indicating potential market resistance to current pricing tiers.">The subscription is way too expensive for what we get</quote>
+
+<quote is_question_relevant="false" sentiment="neutral" theme="workflow_integration" justification="Shows how users adapt existing tools to fill gaps in their workflow. This workaround behavior suggests there's unmet demand for native integration features that could simplify their process.">I just use a spreadsheet to track everything manually</quote>
+
+<quote is_question_relevant="true" sentiment="positive" theme="feature_validation" justification="This enthusiastic response validates that automated reporting is a high-value feature for users. The word 'amazing' suggests this capability significantly improves their experience and could be a key differentiator.">The automated reports are amazing and save me hours</quote>
+
+Examples of INCORRECT justifications (robotic, generic, technical):
+❌ "Expresses a clear user need or pain point. Baseline relevance with potential context value."
+❌ "High-quality structured extraction with complete metadata. Extracted using structured_xml method."
+❌ "Shows user sentiment about the product. Relevant to research objectives."
 </developers_note>
