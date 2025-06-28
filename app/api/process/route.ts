@@ -184,14 +184,6 @@ class AnalysisParser {
     }
   }
 
-  static extractContentClassification(content: string): string {
-    try {
-      const match = content.match(/<content_classification>([\s\S]*?)<\/content_classification>/);
-      return match ? match[1].trim() : 'UNKNOWN';
-    } catch {
-      return 'UNKNOWN';
-    }
-  }
 
   static generateRelevanceJustification(quote: ParsedQuote, relevanceScore: number, extractionMethod: string): string {
     const reasons = [];
@@ -333,25 +325,40 @@ class QuoteExtractor {
   private static isValidQuote(quote: ParsedQuote): boolean {
     const text = quote.text.trim();
     
-    // Very minimal validation - only reject obvious garbage
-    if (text.length < 5) return false;
+    // Check minimum content requirements
+    if (text.length < 15) return false;
     
-    // Only reject actual XML tags, not normal text
-    if (text.includes('</quote>') || text.includes('<quote') || text.includes('<analysis>')) return false;
+    // Reject quotes with XML syntax
+    if (text.includes('<') || text.includes('>') || text.includes('</')) return false;
     
-    // Only reject obvious metadata patterns
+    // Reject quotes that are obviously analysis metadata
     const metadataPatterns = [
-      /^relevance_score:\s*\d/i,
-      /^indicator:\s*/i,
-      /^classification:\s*/i,
-      /^category:\s*/i,
-      /^sentiment:\s*/i,
-      /^Raw analysis data:/i
+      /^relevance_score/i,
+      /^indicator/i,
+      /^classification/i,
+      /^\d+\s*-\s*(?:the|this)/i, // Pattern like "8 - The post discusses..."
+      /analysis shows/i,
+      /the post discusses/i,
+      /this content/i
     ];
     
     if (metadataPatterns.some(pattern => pattern.test(text))) return false;
     
-    // Accept everything else - let the AI handle quality
+    // Reject quotes that don't have user-like characteristics
+    const hasUserIndicators = [
+      /\b(i|my|me|we|our|us)\b/i,
+      /\b(love|hate|frustrated|annoying|difficult|easy|wish|need|want|hope)\b/i,
+      /\b(works?|doesn't work|broken|problem|issue|solution)\b/i,
+      /["'].*["']/,  // Contains quoted text
+      /\$\d+/,       // Contains pricing
+      /\w+\.\w+/     // Contains domain/email-like patterns
+    ];
+    
+    // If quote doesn't have any user indicators and is short, likely metadata
+    if (text.length < 50 && !hasUserIndicators.some(pattern => pattern.test(text))) {
+      return false;
+    }
+    
     return true;
   }
 
@@ -771,7 +778,6 @@ class DatabaseService {
       }
 
       const relevanceScore = AnalysisParser.extractRelevanceScore(post.raw_analysis);
-      const classification = AnalysisParser.extractContentClassification(post.raw_analysis);
       
       // First, check if this post already exists to avoid overwriting good data with empty values
       const { data: existingPost } = await getSupabaseClient()
@@ -786,7 +792,6 @@ class DatabaseService {
         subreddit: post.subreddit || null,
         url: post.url || null,
         relevance_score: relevanceScore,
-        classification_justification: classification,
         run_id: runId,
         created_utc: post.created_utc ? new Date(post.created_utc) : null
       };
