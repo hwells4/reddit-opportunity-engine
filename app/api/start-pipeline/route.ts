@@ -127,6 +127,7 @@ export async function POST(request: Request) {
     // Store webhook payload AFTER successful send if run_id is provided
     if (body.run_id || gumloopPayload.run_id) {
       const runId = body.run_id || gumloopPayload.run_id;
+      console.log(`💾 Attempting to store webhook payload for run_id: ${runId}`);
       try {
         const supabase = getSupabaseClient();
         
@@ -141,9 +142,11 @@ export async function POST(request: Request) {
           .eq('run_id', runId);
           
         if (error) {
-          console.error('Failed to store webhook payload:', error);
+          console.error('❌ Failed to store webhook payload:', error);
+          console.error('   Run ID:', runId);
+          console.error('   Error details:', JSON.stringify(error, null, 2));
         } else {
-          console.log(`Stored webhook payload for run ${runId}`);
+          console.log(`✅ Successfully stored webhook payload for run ${runId}`);
         }
       } catch (dbError) {
         console.error('Failed to store webhook payload:', dbError);

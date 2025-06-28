@@ -218,6 +218,24 @@ Return the modified payload as valid JSON.`;
     console.log('📋 Creating database entry for resent webhook...');
     await createResendRunViaAPI(run_id, newRunId, modifiedPayload);
     
+    // Small delay to ensure database entry is committed before webhook send
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Verify database entry was created successfully
+    const supabase = getSupabaseClient();
+    const { data: verifyRun, error: verifyError } = await supabase
+      .from('runs')
+      .select('run_id, status')
+      .eq('run_id', newRunId)
+      .single();
+      
+    if (verifyError || !verifyRun) {
+      console.error('❌ Failed to verify database entry creation:', verifyError);
+      throw new Error('Database entry verification failed - cannot proceed with webhook');
+    } else {
+      console.log(`✅ Verified database entry exists for run: ${newRunId}`);
+    }
+    
     // Update the run_id in the payload
     if (modifiedPayload.run_id) {
       modifiedPayload.run_id = newRunId;
