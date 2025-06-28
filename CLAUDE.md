@@ -773,3 +773,161 @@ psql -d your_db -f migrations/004_add_quote_justifications.sql
 - Remove 37 unused UI components from components/ui/
 - Remove unused npm dependencies (see CODE_CLEANUP_ANALYSIS.md for full list)
 - This cleanup could reduce bundle size by ~500KB-1MB
+
+---
+
+# CRITICAL ISSUES FIXED - Session 2025-06-28 
+
+## ✅ **ISSUE 1: SILENT RUN CREATION FAILURES - FIXED**
+
+### **The Problem**
+User reported foreign key constraint violations when processing webhooks:
+```
+Key (run_id)=(b21075b5-2315-45cd-b6ed-8a399764c2d5) is not present in table "runs"
+```
+
+### **Root Cause**
+1. **CLI tried to create run** → `POST /api/runs` call **FAILED**
+2. **CLI silently continued** → `catch` block returned empty string `''` instead of stopping
+3. **Empty run_id sent to Gumloop** → webhook payload had `run_id: ""`
+4. **Gumloop generated its own run_id** → which didn't exist in our database
+5. **System failed** → trying to save posts with non-existent run_id
+
+### **Solution Applied** (commit f4eee83)
+1. **Reverted auto-creation hack** - removed `ensureRunExists()` from process route
+2. **Fixed CLI to EXIT on failure** - now stops with clear error messages
+3. **Enhanced error debugging** - shows HTTP response details and possible causes
+4. **Added validation logging** - displays account info before API calls
+
+## ✅ **ISSUE 2: WEBHOOK RESEND STORAGE - FIXED**
+
+### **The Problem** 
+Webhook resend functionality wasn't storing webhook payloads for ANY resent runs.
+
+### **Root Cause**
+1. **Resend pre-generated UUIDs** but `/api/runs` endpoint generates its own
+2. **Mismatch between expected and actual run_ids** 
+3. **Webhook storage tried to update non-existent run_id**
+
+### **Solution Applied** (commit d7c33e8)
+1. **Removed run_id from API payload** - let API generate its own
+2. **Capture and use actual run_id** returned by API
+3. **Use single run_id for all workflows** in A/B testing
+4. **Added check-run-status utility** for debugging run issues
+
+### **Current Status**
+- ✅ **CLI run creation**: Fails fast with clear errors instead of silent continuation
+- ✅ **Webhook resending**: Properly stores webhook payloads for all resends
+- ✅ **Database integrity**: All run_ids exist before webhook processing
+- ✅ **A/B testing**: Works correctly with proper webhook storage
+
+## ✅ **QUOTE PROCESSING SYSTEM - FIXED**
+
+### **Problem**
+- **Quote extraction rate dropped to 0%** due to overly restrictive validation
+- **Valid user quotes rejected** like "It's literally always wrong" and "Data still comes and goes via fax machine"
+- **Broke working system** while trying to "improve" validation logic
+
+### **Solution Applied**
+1. **Restored sophisticated validation logic** from working commit 5c8e808
+2. **Smart user-like characteristics detection** instead of blanket rejections
+3. **Removed unused classification extraction** per user request
+4. **Maintained dual extraction system**: XML primary + GPT-nano fallback
+
+### **Current Validation Logic** (Working)
+```javascript
+private static isValidQuote(quote: ParsedQuote): boolean {
+  const text = quote.text.trim();
+  
+  // Check minimum content requirements
+  if (text.length < 15) return false;
+  
+  // Reject quotes with XML syntax
+  if (text.includes('<') || text.includes('>') || text.includes('</')) return false;
+  
+  // Reject obvious metadata
+  const metadataPatterns = [
+    /^relevance_score/i,
+    /^indicator/i,
+    /^classification/i,
+    /^\d+\s*-\s*(?:the|this)/i,
+    /analysis shows/i,
+    /the post discusses/i,
+    /this content/i
+  ];
+  
+  if (metadataPatterns.some(pattern => pattern.test(text))) return false;
+  
+  // Check for user-like characteristics
+  const hasUserIndicators = [
+    /\b(i|my|me|we|our|us)\b/i,                    // First person
+    /\b(love|hate|frustrated|annoying|difficult|easy|wish|need|want|hope)\b/i, // Emotions
+    /\b(works?|doesn't work|broken|problem|issue|solution)\b/i, // Problems/solutions
+    /["'].*["']/,                                   // Contains quoted text
+    /\$\d+/,                                       // Contains pricing
+    /\w+\.\w+/                                     // Domain/email patterns
+  ];
+  
+  // If short quote without user indicators = likely metadata
+  if (text.length < 50 && !hasUserIndicators.some(pattern => pattern.test(text))) {
+    return false;
+  }
+  
+  return true;
+}
+```
+
+### **Results**
+- ✅ **Quote extraction restored** - Successfully extracting quotes with justifications
+- ✅ **Dual system working** - XML primary extraction + GPT-nano fallback both functional
+- ✅ **Justifications preserved** - AI-provided context explanations properly captured
+- ✅ **Compatible with Gumloop format** - Handles all required attributes perfectly
+
+## ✅ **WEBHOOK RESEND SYSTEM - FULLY OPERATIONAL**
+
+### **Complete Feature Set Working**
+- **Webhook resending**: ✅ Creates proper run_ids, stores webhook payloads, sends to Gumloop
+- **Webhook storage**: ✅ All webhooks (original and resent) properly stored in database
+- **Database integration**: ✅ Proper foreign keys, API-generated UUIDs, full audit trail
+- **AI modifications**: ✅ Natural language webhook editing via GPT-4o-mini
+- **Subreddit validation**: ✅ Automatic Reddit API validation with subscriber counts
+- **A/B testing**: ✅ Test identical webhook across multiple Gumloop workflows
+- **Error recovery**: ✅ Clear error messages and validation at every step
+
+### **Key Improvements Delivered**
+1. **No more missing webhooks** - Fixed storage for both original and resent webhooks
+2. **Proper run tracking** - Every webhook has valid run_id in database
+3. **Development efficiency** - Test Gumloop changes without full discovery runs
+4. **Business value** - Quick iteration on failed runs, A/B test workflows
+
+## 🚨 **LESSONS LEARNED**
+
+### **What Went Wrong**
+1. **Scatter-shot approach** - changing multiple things without testing
+2. **"Improvement" mindset** - tried to enhance working system unnecessarily  
+3. **No systematic testing** - no validation of each change
+4. **Lost sight of core issue** - focused on validation instead of actual extraction
+
+### **Correct Approach Used**
+1. **Identified working version** - commit 5c8e808 had sophisticated validation
+2. **Made minimal targeted fix** - restored working validation logic only
+3. **Validated each change** - tested with real data before proceeding
+4. **Preserved existing architecture** - kept dual extraction system intact
+
+---
+
+# SYSTEM STATUS
+
+## ✅ **All Systems Operational**
+
+### **Quote Processing**
+- **Primary XML extraction**: Working with smart validation
+- **GPT-nano fallback**: Ready when XML parsing fails
+- **Justification extraction**: Captures AI-provided context explanations
+- **Success rate**: Restored from 0% to normal levels
+
+### **Key Features Working**
+- **Multi-layer extraction**: Structured XML → Generic XML → AI cleanup → Regex → Sentences
+- **Smart validation**: Accepts real user quotes, rejects metadata
+- **Dual AI system**: o4-mini analysis + GPT-nano cleanup
+- **Full Gumloop compatibility**: All quote attributes properly extracted
