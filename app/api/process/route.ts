@@ -334,36 +334,40 @@ class QuoteExtractor {
     const text = quote.text.trim();
     
     // Check minimum content requirements
-    if (text.length < 15) return false;
+    if (text.length < 10) return false;
     
-    // Reject quotes with XML syntax
-    if (text.includes('<') || text.includes('>') || text.includes('</')) return false;
+    // Reject quotes with XML syntax (but allow normal punctuation)
+    if (text.includes('</') || text.includes('<quote') || text.includes('</quote>')) return false;
     
-    // Reject quotes that are obviously analysis metadata
+    // Only reject quotes that are obviously analysis metadata (more specific patterns)
     const metadataPatterns = [
-      /^relevance_score/i,
-      /^indicator/i,
-      /^classification/i,
-      /^\d+\s*-\s*(?:the|this)/i, // Pattern like "8 - The post discusses..."
-      /analysis shows/i,
-      /the post discusses/i,
-      /this content/i
+      /^relevance_score:\s*/i,
+      /^indicator:\s*/i,
+      /^classification:\s*/i,
+      /^\d+\s*-\s*(?:the post|this post|analysis)/i, // Pattern like "8 - The post discusses..."
+      /^analysis shows/i,
+      /^the post discusses/i,
+      /^this content/i,
+      /^category:\s*/i,
+      /^sentiment:\s*/i
     ];
     
     if (metadataPatterns.some(pattern => pattern.test(text))) return false;
     
-    // Reject quotes that don't have user-like characteristics
+    // Much more lenient user validation - only reject obvious non-user content
     const hasUserIndicators = [
-      /\b(i|my|me|we|our|us)\b/i,
-      /\b(love|hate|frustrated|annoying|difficult|easy|wish|need|want|hope)\b/i,
-      /\b(works?|doesn't work|broken|problem|issue|solution)\b/i,
+      /\b(i|my|me|we|our|us|you|your)\b/i,
+      /\b(love|hate|frustrated|annoying|difficult|easy|wish|need|want|hope|think|feel|believe)\b/i,
+      /\b(works?|doesn't work|broken|problem|issue|solution|always|never|literally)\b/i,
       /["'].*["']/,  // Contains quoted text
       /\$\d+/,       // Contains pricing
-      /\w+\.\w+/     // Contains domain/email-like patterns
+      /\w+\.\w+/,    // Contains domain/email-like patterns
+      /\b(good|bad|terrible|great|awful|amazing|wrong|right)\b/i,
+      /\b(app|software|system|tool|platform|website|service)\b/i
     ];
     
-    // If quote doesn't have any user indicators and is short, likely metadata
-    if (text.length < 50 && !hasUserIndicators.some(pattern => pattern.test(text))) {
+    // Only reject very short quotes without any user characteristics (likely metadata fragments)
+    if (text.length < 25 && !hasUserIndicators.some(pattern => pattern.test(text))) {
       return false;
     }
     
