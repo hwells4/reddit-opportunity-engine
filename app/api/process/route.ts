@@ -1075,6 +1075,18 @@ export async function POST(request: NextRequest) {
     const data: ProcessedPostData = await request.json();
     response.run_id = data.run_id;
     
+    // Validate data structure
+    if (!data.posts || !Array.isArray(data.posts)) {
+      console.error('❌ Invalid data structure received:', {
+        hasRunId: !!data.run_id,
+        postsType: typeof data.posts,
+        postsIsArray: Array.isArray(data.posts),
+        dataKeys: Object.keys(data),
+        postsValue: data.posts
+      });
+      throw new Error(`Invalid posts data: expected array, got ${typeof data.posts}`);
+    }
+    
     // Track detailed metrics
     let totalPostsSaved = 0;
     let totalQuotes = 0;
