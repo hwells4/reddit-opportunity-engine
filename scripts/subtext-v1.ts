@@ -623,6 +623,9 @@ async function createRun(request: DiscoveryRequest, account: Account): Promise<s
   try {
     const productName = extractProductName(request.product)
     
+    // Debug logging for account validation
+    console.log(chalk.gray(`🔍 Creating run with account: ${account.company_name} (${account.account_id})`))
+    
     const response = await fetch(`${API_BASE}/api/runs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -637,7 +640,21 @@ async function createRun(request: DiscoveryRequest, account: Account): Promise<s
     })
     
     if (!response.ok) {
-      throw new Error(`Failed to create run: ${response.statusText}`)
+      let errorDetails = `HTTP ${response.status}: ${response.statusText}`
+      
+      try {
+        const errorBody = await response.json()
+        if (errorBody.error) {
+          errorDetails += ` - ${errorBody.error}`
+        }
+        if (errorBody.details) {
+          errorDetails += ` (${errorBody.details})`
+        }
+      } catch {
+        // If we can't parse JSON, just use status text
+      }
+      
+      throw new Error(`Failed to create run: ${errorDetails}`)
     }
     
     const data = await response.json() as { run_id: string }
@@ -645,8 +662,23 @@ async function createRun(request: DiscoveryRequest, account: Account): Promise<s
     return data.run_id
     
   } catch (error) {
-    console.log(chalk.yellow('⚠️ Failed to create run record, continuing without tracking...'))
-    return ''
+    console.error(chalk.red('❌ CRITICAL ERROR: Failed to create run record!'))
+    console.error(chalk.red('🚨 Cannot continue without valid run tracking.'))
+    
+    if (error instanceof Error) {
+      console.error(chalk.red(`Error details: ${error.message}`))
+    } else {
+      console.error(chalk.red(`Unknown error:`, error))
+    }
+    
+    console.error(chalk.yellow('\n🔍 Possible causes:'))
+    console.error(chalk.yellow('  - Invalid account_id provided'))
+    console.error(chalk.yellow('  - Account is inactive'))  
+    console.error(chalk.yellow('  - Database connection issues'))
+    console.error(chalk.yellow('  - Missing environment variables'))
+    
+    console.error(chalk.red('\n💡 The process will now EXIT to prevent data corruption.'))
+    process.exit(1)
   }
 }
 

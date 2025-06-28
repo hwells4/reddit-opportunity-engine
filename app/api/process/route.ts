@@ -769,60 +769,6 @@ class DataValidator {
 }
 
 class DatabaseService {
-  static async ensureRunExists(runId: string): Promise<{ success: boolean, error?: ProcessingError }> {
-    try {
-      // Check if run exists
-      const { data: existingRun } = await getSupabaseClient()
-        .from('runs')
-        .select('run_id')
-        .eq('run_id', runId)
-        .single();
-
-      if (existingRun) {
-        return { success: true };
-      }
-
-      // Run doesn't exist, create it with minimal data
-      console.log(`🔧 Creating missing run ${runId} for incoming webhook`);
-      
-      const { error: insertError } = await getSupabaseClient()
-        .from('runs')
-        .insert({
-          run_id: runId,
-          status: 'running',
-          user_question: 'Auto-created from webhook',
-          problem_area: 'Unknown - created from webhook',
-          target_audience: 'Unknown - created from webhook',
-          product_type: 'Unknown - created from webhook',
-          product_name: 'webhook-created',
-          account_id: '00000000-0000-0000-0000-000000000001', // Demo account
-          posts_analyzed_count: 0,
-          quotes_extracted_count: 0
-        });
-
-      if (insertError) {
-        return {
-          success: false,
-          error: {
-            type: 'post_insertion',
-            message: `Failed to create missing run ${runId}`,
-            details: insertError
-          }
-        };
-      }
-
-      return { success: true };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: {
-          type: 'post_insertion',
-          message: `Error ensuring run exists for ${runId}`,
-          details: error.message
-        }
-      };
-    }
-  }
 
   static async insertPost(post: any, runId: string): Promise<{ success: boolean, error?: ProcessingError }> {
     try {
@@ -1116,13 +1062,8 @@ export async function POST(request: NextRequest) {
     const data: ProcessedPostData = await request.json();
     response.run_id = data.run_id;
     
-    // Ensure the run exists in the database before processing posts
-    const runCheckResult = await DatabaseService.ensureRunExists(data.run_id);
-    if (!runCheckResult.success) {
-      response.total_errors = 1;
-      response.errors = [runCheckResult.error!];
-      return NextResponse.json(response);
-    }
+    // Note: run_id should already exist from CLI creation
+    // If it doesn't exist, this indicates a system problem that should be investigated
     
     // Track detailed metrics
     let totalPostsSaved = 0;
