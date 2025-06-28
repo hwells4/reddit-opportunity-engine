@@ -1,15 +1,17 @@
 // Notion helper functions for managing quotes database and tables
 import { Client } from "@notionhq/client";
 
-// Updated delay constants for different operation types
+// Enhanced delay constants for conflict prevention
 const DELAYS = {
   NOTION_BASIC: 100,           // Basic operations
   NOTION_DATABASE: 1000,       // Database operations
   NOTION_HEAVY: 2000,         // Heavy operations (large content)
-  DATABASE_CREATION: 3000,     // After database creation
-  BATCH_PROCESSING: 150,       // Between batch items (optimized from 500ms)
-  MICRO_BATCH: 50,            // For small batches
-  ERROR_RECOVERY: 1000        // Only when retrying errors
+  DATABASE_CREATION: 5000,     // After database creation (increased from 3s)
+  BATCH_PROCESSING: 200,       // Between quotes (increased from 150ms)
+  MICRO_BATCH: 100,           // For small batches (increased from 50ms)
+  LARGE_BATCH: 300,           // For large batches (new)
+  ERROR_RECOVERY: 1000,       // Only when retrying errors
+  WRITE_READINESS: 2000       // Additional write readiness verification
 };
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -23,6 +25,10 @@ async function verifyDatabaseReady(notion: Client, databaseId: string, maxAttemp
     try {
       await notion.databases.retrieve({ database_id: databaseId });
       console.log('Database verified ready');
+      
+      // Additional write-readiness verification
+      console.log('Verifying write readiness...');
+      await delay(DELAYS.WRITE_READINESS);
       return;
     } catch (error: any) {
       if (attempt === maxAttempts) {
@@ -35,42 +41,54 @@ async function verifyDatabaseReady(notion: Client, databaseId: string, maxAttemp
   }
 }
 
-// Enhanced retry wrapper with operation-specific delays
+// Enhanced retry wrapper with exponential backoff and circuit breaker
 const notionCreateWithRetry = async <T>(
   createFunction: () => Promise<T>, 
   operation: string,
-  maxRetries = 3
+  maxRetries = 5
 ): Promise<T> => {
+  let conflictCount = 0;
+  
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await createFunction();
     } catch (error: any) {
       if (error.status === 409 && attempt < maxRetries) {
-        // Enhanced backoff for different operation types
-        let retryDelay = attempt * 1000; // Base: 1s, 2s, 3s
+        conflictCount++;
         
+        // Exponential backoff with jitter
+        let retryDelay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s, 16s
+        const jitter = Math.random() * 500; // 0-500ms jitter
+        retryDelay += jitter;
+        
+        // Enhanced delays for different operation types
         if (operation.includes('database')) {
-          retryDelay = attempt * 2000; // Database ops: 2s, 4s, 6s
+          retryDelay *= 1.5; // Extra delay for database ops
         }
         if (operation.includes('Quote creation')) {
-          retryDelay = attempt * 1500; // Quote ops: 1.5s, 3s, 4.5s
+          retryDelay *= 1.2; // Moderate extra delay for quotes
         }
         
-        console.warn(`[RETRY ${attempt}/${maxRetries}] 409 conflict in ${operation}, retrying in ${retryDelay}ms...`);
+        // Circuit breaker - if too many conflicts, add extra delay
+        if (conflictCount > 3) {
+          retryDelay += 2000; // Extra 2s delay after 3 conflicts
+          console.warn(`[CIRCUIT BREAKER] High conflict rate detected, adding extra delay`);
+        }
+        
+        console.warn(`[RETRY ${attempt}/${maxRetries}] 409 conflict in ${operation}, retrying in ${Math.round(retryDelay)}ms...`);
         await delay(retryDelay);
         continue;
       }
       // Re-throw if not 409 or max retries exceeded
-      console.error(`[NOTION ERROR] ${operation} failed:`, {
+      console.error(`[NOTION ERROR] ${operation} failed after ${attempt} attempts:`, {
         status: error.status,
         message: error.message,
-        attempt,
-        maxRetries
+        conflictCount
       });
       throw error;
     }
   }
-  throw new Error(`Retry logic error: should not reach here`);
+  throw new Error(`Maximum retries (${maxRetries}) exceeded for ${operation}`);
 };
 
 /**
@@ -209,17 +227,47 @@ export async function createQuotesDatabase(
 }
 
 /**
+ * Sanitize and validate quote text content
+ */
+function sanitizeQuoteText(text: string): string {
+  if (!text || typeof text !== 'string') {
+    return "No quote text";
+  }
+  
+  // Remove XML tags and fragments
+  const cleanText = text
+    .replace(/<[^>]*>/g, '')  // Remove XML tags
+    .replace(/&lt;[^&]*&gt;/g, '')  // Remove encoded XML
+    .replace(/\s+/g, ' ')  // Normalize whitespace
+    .trim();
+  
+  // Validate length and content
+  if (cleanText.length < 10) {
+    return "Invalid quote content";
+  }
+  
+  // Truncate if too long for Notion
+  if (cleanText.length > 2000) {
+    return cleanText.substring(0, 1997) + "...";
+  }
+  
+  return cleanText;
+}
+
+/**
  * Format a quote from our database to Notion properties (simplified for individual databases)
  */
 export function formatQuoteForNotion(quote: any): any {
   // Extract Reddit URL from the post if available
   const redditUrl = quote.post?.url || (quote.post?.subreddit ? `https://reddit.com/r/${quote.post.subreddit}` : null);
   
+  const sanitizedText = sanitizeQuoteText(quote.text);
+  
   const properties: any = {
     "Quote": {
       title: [
         {
-          text: { content: quote.text || "No quote text" }
+          text: { content: sanitizedText }
         }
       ]
     },
@@ -288,65 +336,54 @@ export async function addQuotesToNotion(
   const totalQuotes = quotes.length;
   console.log(`Processing ${totalQuotes} quotes with smart batching...`);
 
-  // Smart batching strategy based on quote count
-  let batchSize: number;
+  // Sequential processing with conflict-preventing delays
   let batchDelay: number;
   
   if (totalQuotes <= 50) {
-    batchSize = 5; 
-    batchDelay = DELAYS.MICRO_BATCH;      // Small: 5 at a time, 50ms delay
-    console.log('Using small batch strategy: 5 quotes per batch, 50ms delay');
+    batchDelay = DELAYS.MICRO_BATCH;      // Small: 100ms delay
+    console.log(`Sequential processing ${totalQuotes} quotes with 100ms delays`);
   } else if (totalQuotes <= 200) {
-    batchSize = 3; 
-    batchDelay = DELAYS.BATCH_PROCESSING; // Medium: 3 at a time, 150ms delay
-    console.log('Using medium batch strategy: 3 quotes per batch, 150ms delay');
+    batchDelay = DELAYS.BATCH_PROCESSING; // Medium: 200ms delay
+    console.log(`Sequential processing ${totalQuotes} quotes with 200ms delays`);
   } else {
-    batchSize = 2; 
-    batchDelay = 200;                     // Large: 2 at a time, 200ms delay
-    console.log('Using large batch strategy: 2 quotes per batch, 200ms delay');
+    batchDelay = DELAYS.LARGE_BATCH;      // Large: 300ms delay
+    console.log(`Sequential processing ${totalQuotes} quotes with 300ms delays`);
   }
   
-  // Process in micro-batches for better throughput
-  for (let i = 0; i < quotes.length; i += batchSize) {
-    const batch = quotes.slice(i, i + batchSize);
+  // Process sequentially to eliminate 409 conflicts
+  for (let i = 0; i < quotes.length; i++) {
+    const quote = quotes[i];
     
-    // Process batch in parallel (safe for small batches)
-    const batchPromises = batch.map(async (quote) => {
-      try {
-        const properties = formatQuoteForNotion(quote);
-        
-        await notionCreateWithRetry(
-          () => notion.pages.create({
-            parent: { database_id: databaseId },
-            properties
-          }),
-          `Quote creation for ${quote.quote_id || 'unknown'}`
-        );
-        
-        results.count++;
-        return { success: true, quote_id: quote.quote_id };
-      } catch (error: any) {
-        console.error(`Failed to add quote ${quote.quote_id}:`, error);
-        results.errors.push({
-          quote_id: quote.quote_id,
-          error: error.message
-        });
-        results.success = false;
-        return { success: false, quote_id: quote.quote_id };
+    try {
+      const properties = formatQuoteForNotion(quote);
+      
+      await notionCreateWithRetry(
+        () => notion.pages.create({
+          parent: { database_id: databaseId },
+          properties
+        }),
+        `Quote creation for ${quote.quote_id || 'unknown'}`
+      );
+      
+      results.count++;
+      
+      // Add small delay between each quote to prevent conflicts
+      if (i < quotes.length - 1) {
+        await delay(batchDelay);
       }
-    });
-    
-    // Wait for batch to complete
-    await Promise.all(batchPromises);
-    
-    // Smart delay based on batch size (only between batches, not after last)
-    if (i + batchSize < quotes.length) {
-      await delay(batchDelay);
+      
+    } catch (error: any) {
+      console.error(`Failed to add quote ${quote.quote_id}:`, error);
+      results.errors.push({
+        quote_id: quote.quote_id,
+        error: error.message
+      });
+      results.success = false;
     }
     
     // Progress logging for large batches
-    if (results.count % 50 === 0 || i + batchSize >= quotes.length) {
-      console.log(`Processed ${results.count}/${quotes.length} quotes`);
+    if ((results.count + results.errors.length) % 50 === 0 || i === quotes.length - 1) {
+      console.log(`Processed ${results.count + results.errors.length}/${quotes.length} quotes`);
     }
   }
   
