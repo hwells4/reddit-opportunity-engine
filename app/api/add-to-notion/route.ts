@@ -429,10 +429,18 @@ export async function POST(request: Request) {
         }
       },
       {
+        type: "heading_2" as const,
+        heading_2: { 
+          rich_text: [{ 
+            text: { content: "Research Overview" } 
+          }] 
+        }
+      },
+      {
         type: "paragraph" as const,
         paragraph: { 
           rich_text: [{ 
-            text: { content: `Hey ${contactName} and the rest of the ${companyName} team!` } 
+            text: { content: `We conducted a comprehensive analysis of Reddit discussions to understand market opportunities and user needs relevant to ${companyName}. This research provides actionable insights from real user conversations and feedback.` } 
           }] 
         }
       },

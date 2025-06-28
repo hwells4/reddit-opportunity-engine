@@ -428,22 +428,14 @@ export async function findAndReplacePlaceholder(
 }
 
 /**
- * Convert text content to Notion blocks with basic formatting
+ * Convert text content to Notion blocks with proper markdown formatting
  */
 export function textToNotionBlocks(text: string): any[] {
   if (!text) return [];
   
-  // Split text into paragraphs
-  const paragraphs = text.split('\n\n').filter(p => p.trim());
-  
-  return paragraphs.map(paragraph => ({
-    type: "paragraph",
-    paragraph: {
-      rich_text: [{
-        text: { content: paragraph.trim() }
-      }]
-    }
-  }));
+  // Import markdown parser and use it for proper formatting
+  const { createBlocksFromMarkdown } = require('./markdownParser');
+  return createBlocksFromMarkdown(text);
 }
 
 /**
@@ -455,7 +447,9 @@ export async function updateHomepageWithIntro(
   introContent: string
 ): Promise<boolean> {
   try {
-    const introBlocks = textToNotionBlocks(introContent);
+    // Use markdown parser directly for better control
+    const { createBlocksFromMarkdown } = require('./markdownParser');
+    const introBlocks = createBlocksFromMarkdown(introContent);
     
     return await findAndReplacePlaceholder(
       notion,
@@ -516,7 +510,7 @@ export async function processFullReportContent(
       // Large content: use progressive loading with chunked processing
       console.log(`Large ${reportType} content detected (${chunks.length} blocks), using progressive loading...`);
       
-      // Replace placeholder with loading message
+      // First replace placeholder with loading message
       const loadingBlock = [{
         type: "callout" as const,
         callout: {
@@ -546,6 +540,24 @@ export async function processFullReportContent(
       
       // Process content in chunks of 90 blocks (leave buffer below 100 limit)
       await addBlocksInChunks(notion, pageId, blocks, 90);
+      
+      // CRITICAL FIX: Replace the loading message with the actual content completion message
+      const completionBlock = [{
+        type: "callout" as const,
+        callout: {
+          icon: { type: "emoji" as const, emoji: "✅" as const },
+          rich_text: [{
+            text: { content: `Full ${reportType} content loaded successfully (${chunks.length} sections)` }
+          }]
+        }
+      }];
+      
+      await findAndReplacePlaceholder(
+        notion,
+        pageId,
+        `Loading full ${reportType} content... (${chunks.length} sections)`,
+        completionBlock
+      );
       
       console.log(`[SUCCESS] Progressive loading complete for ${reportType} report`);
       return true;
