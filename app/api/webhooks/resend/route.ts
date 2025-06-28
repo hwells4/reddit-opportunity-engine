@@ -222,8 +222,8 @@ Return the modified payload as valid JSON.`;
     await new Promise(resolve => setTimeout(resolve, 500));
     
     // Verify database entry was created successfully
-    const supabase = getSupabaseClient();
-    const { data: verifyRun, error: verifyError } = await supabase
+    const supabaseVerify = getSupabaseClient();
+    const { data: verifyRun, error: verifyError } = await supabaseVerify
       .from('runs')
       .select('run_id, status')
       .eq('run_id', newRunId)
@@ -511,11 +511,11 @@ async function validateAndAdjustSubreddits(payload: any): Promise<any> {
 
 // Create database entry for resent webhook using existing API
 async function createResendRunViaAPI(originalRunId: string, newRunId: string, modifiedPayload: any): Promise<void> {
-  const supabase = getSupabaseClient();
+  const supabaseClient = getSupabaseClient();
   
   try {
     // Fetch original run data to inherit metadata
-    const { data: originalRun, error: fetchError } = await supabase
+    const { data: originalRun, error: fetchError } = await supabaseClient
       .from('runs')
       .select('*')
       .eq('run_id', originalRunId)
