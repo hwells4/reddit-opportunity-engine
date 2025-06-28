@@ -326,6 +326,30 @@ Return the modified payload as valid JSON.`;
         
         const webhookResult = await webhookResponse.json();
         
+        // Store webhook payload in database AFTER successful send (just like normal flow)
+        if (webhookResponse.ok && testRunId) {
+          try {
+            console.log(`💾 Storing webhook payload for resent run: ${testRunId}`);
+            const supabaseClient = getSupabaseClient();
+            const { error: storageError } = await supabaseClient
+              .from('runs')
+              .update({
+                webhook_payload: testPayload,
+                webhook_sent_at: new Date().toISOString(),
+                webhook_response: webhookResult
+              })
+              .eq('run_id', testRunId);
+              
+            if (storageError) {
+              console.error('❌ Failed to store webhook payload for resent run:', storageError);
+            } else {
+              console.log(`✅ Stored webhook payload for resent run: ${testRunId}`);
+            }
+          } catch (storageErr) {
+            console.error('❌ Error storing webhook payload:', storageErr);
+          }
+        }
+        
         results.push({
           workflow_name: workflow.workflow_name,
           workflow_url: targetUrl,
