@@ -1,3 +1,26 @@
+/**
+ * API route providing detailed usage analytics for a specific account.
+ * This dynamic route uses the account ID from the URL path to fetch and
+ * calculate comprehensive statistics about their activity and resource consumption.
+ *
+ * - GET /api/accounts/{id}/usage:
+ *   Retrieves detailed usage statistics for the specified account.
+ *   - It first verifies the account exists, returning a 404 if not found.
+ *   - It then fetches all associated records from the `runs` table.
+ *   - It calculates a rich set of metrics, including total runs (by status),
+ *     total posts analyzed, total quotes extracted, average posts/quotes per run,
+ *     and the date range of activity.
+ *   - Optionally includes a detailed history of recent runs.
+ *   - This endpoint is ideal for powering a customer-facing usage dashboard.
+ *
+ * - POST /api/accounts/{id}/usage:
+ *   Calculates an estimated cost for an account based on their usage.
+ *   - It accepts a JSON body with cost-per-unit values (e.g., `cost_per_run`).
+ *   - It cleverly reuses its own GET handler to fetch the necessary usage counts.
+ *   - It applies the provided costs to the usage data to generate a detailed
+ *     cost breakdown and a total estimated cost. This provides a flexible way
+ *     to model billing without hardcoding prices.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 

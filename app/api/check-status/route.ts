@@ -1,3 +1,24 @@
+/**
+ * API route for polling the status of a long-running job on the Gumloop platform.
+ * This endpoint acts as a bridge between the frontend and the external Gumloop
+ * pipeline, translating Gumloop's technical state into a user-friendly progress report.
+ *
+ * - GET /api/check-status?runId=<run_id>:
+ *   Accepts a `runId` corresponding to a job initiated on Gumloop.
+ *   It queries the Gumloop API (`get_pl_run`) to fetch the current status of the job.
+ *
+ *   The core functionality includes:
+ *   - Mapping Gumloop's raw states ('STARTED', 'RUNNING', 'DONE', 'FAILED') into a
+ *     progress percentage (0-100) and a human-readable status message.
+ *   - For 'RUNNING' states, it uses a heuristic-based approach (`calculateProgressFromLogs`)
+ *     that combines elapsed time and log length to estimate a more granular progress,
+ *     providing a smoother user experience.
+ *   - It parses the latest log messages (`extractLogMessage`) to provide more specific
+ *     context about the current processing step (e.g., "Collecting data...").
+ *   - The final response includes the progress, status, and a 'finished' flag,
+ *     which the frontend can use to update a progress bar and determine when to
+ *     fetch the final results.
+ */
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {

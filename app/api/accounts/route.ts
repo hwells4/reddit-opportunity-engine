@@ -1,3 +1,30 @@
+/**
+ * API route providing comprehensive CRUD (Create, Read, Update) functionality
+ * for managing user or client "accounts" in the Supabase database. This serves as
+ * the primary administrative endpoint for the `accounts` resource.
+ *
+ * - GET /api/accounts:
+ *   A flexible read endpoint with two modes:
+ *   1.  **Get Single Account with Stats (`?account_id=...`)**: Fetches full details
+ *       for a specific account and enriches the response with calculated
+ *       `usage_stats` (total runs, posts analyzed, etc.) by querying the `runs` table.
+ *       Ideal for a detailed client dashboard view.
+ *   2.  **List & Search Accounts**: Without an `account_id`, it returns a paginated
+ *       list of all active accounts. It also supports a `search` parameter to filter
+ *       results across multiple fields (company name, contact name, email).
+ *
+ * - POST /api/accounts:
+ *   Creates a new account with robust validation.
+ *   - It validates required fields, checks for a valid email format, and, most
+ *     importantly, queries the database to prevent the creation of duplicate
+ *     accounts with the same email, returning a 409 Conflict status if found.
+ *   - On success, returns the newly created account object with a 201 status.
+ *
+ * - PUT /api/accounts?account_id=<...>:
+ *   Updates an existing account. It allows for partial updates by dynamically building
+ *   the update payload from the provided request body. It verifies that the
+ *   account exists before attempting to apply the update.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 

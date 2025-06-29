@@ -1,3 +1,27 @@
+/**
+ * API route providing full CRUD (Create, Read, Update) functionality for managing
+ * "Gumloop Workflows". These workflows represent the different data processing
+ * pipeline templates that can be triggered on the external Gumloop service.
+ *
+ * This endpoint interacts directly with the `gumloop_workflows` table in the
+ * Supabase database to persist and manage these workflow configurations.
+ *
+ * - GET /api/workflows:
+ *   Lists all active workflows. It supports a `search` query parameter to filter
+ *   workflows by name or description. This is used to populate UI elements where
+ *   a user can select a pipeline to run.
+ *
+ * - POST /api/workflows:
+ *   Creates a new workflow record. It requires a `workflow_name` and `workflow_url`.
+ *   It includes logic to automatically parse the `user_id` and `saved_item_id`
+ *   from the `workflow_url` if they are not provided separately, simplifying
+ *   the registration of new pipeline templates.
+ *
+ * - PUT /api/workflows?workflow_id=<...>:
+ *   Updates an existing workflow. It identifies the workflow by the `workflow_id`
+ *   query parameter and updates the record with the fields provided in the request
+ *   body. This allows for editing details or deactivating a workflow.
+ */
 import { NextResponse } from "next/server";
 import { createClient } from '@supabase/supabase-js';
 

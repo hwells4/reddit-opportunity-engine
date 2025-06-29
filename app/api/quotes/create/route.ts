@@ -1,3 +1,24 @@
+/**
+ * API route for manually creating a single quote in the database.
+ * This endpoint provides a convenient way to add one-off quotes that might be
+ * discovered outside the automated data pipeline (e.g., by a user browsing Reddit).
+ * It ensures that manually added data conforms to the required database schema.
+ *
+ * - POST /api/quotes/create:
+ *   The primary functional endpoint for creating a quote.
+ *   - Accepts a JSON body with `text` and `reddit_url` as the minimum required fields.
+ *   - Automatically assigns default values for optional fields like `run_id` ('manual_entry')
+ *     and `category` ('general') to ensure data consistency.
+ *   - It intelligently attempts to `upsert` a corresponding record in the `posts` table
+ *     to maintain relational integrity, even extracting the subreddit from the URL.
+ *   - The main priority is to successfully insert the quote into the `quotes` table.
+ *   - Returns the `quote_id` of the newly created record upon success.
+ *
+ * - GET /api/quotes/create:
+ *   A self-documenting endpoint that provides information on how to use the POST method.
+ *   It returns a JSON object detailing the required/optional fields and an example request body,
+ *   making the API easier to discover and use for developers.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'

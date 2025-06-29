@@ -1,3 +1,26 @@
+/**
+ * API route that acts as a "backend-for-frontend" (BFF) proxy to an external,
+ * standalone "Enhanced Discovery Service". This route facilitates communication
+ * between the main application and a separate microservice responsible for
+ * subreddit discovery.
+ *
+ * NOTE: This appears to be an alternative or possibly legacy implementation
+ * compared to the more integrated `/api/discover` route, which contains its
+ * orchestration logic within this application's codebase.
+ *
+ * - POST /api/enhanced-subreddit-discovery:
+ *   Accepts a discovery request and forwards it to the external service.
+ *   - It validates the incoming request body.
+ *   - It calls the `/enhanced-discover` endpoint on the external service.
+ *   - It then receives the response and transforms it into a format suitable
+ *     for this application's frontend, insulating the client from the specific
+ *     data structure of the downstream service.
+ *
+ * - GET /api/enhanced-subreddit-discovery:
+ *   Acts as a health check for the external discovery service.
+ *   - It calls the `/enhanced-discover/health` endpoint on the external service
+ *     and returns a status indicating whether the service is available and healthy.
+ */
 import { NextResponse } from "next/server";
 
 interface DiscoveryRequest {

@@ -1,3 +1,31 @@
+/**
+ * API route for the core Reddit search pipeline. This is a complex endpoint that
+ * orchestrates a multi-stage data processing funnel to find, filter, hydrate,
+ * and classify Reddit posts based on a user's query. It is designed to be
+ * cost-aware, observable, and ready for A/B testing.
+ *
+ * - POST /api/search:
+ *   Accepts a `SearchRequest` body with `audience` and `questions`.
+ *   It also reads `X-Test-*` headers to allow for matrix testing of different
+ *   pipeline configurations (e.g., oversampling factors).
+ *
+ *   The pipeline follows a sequential, multi-stage process:
+ *   1.  **Keyword Expansion**: Expands the user's query into concrete search terms.
+ *   2.  **Reddit Bulk Search**: Fetches a large, oversampled set of posts from Reddit
+ *       using a pool of workers for concurrency.
+ *   3.  **Post Processing**: Cleans and standardizes the raw post data.
+ *   4.  **Embedding Prune**: A crucial first-pass filter. It uses vector embeddings
+ *       to find semantically relevant posts, drastically reducing the volume of
+ *       data before the expensive LLM stage.
+ *   5.  **Post Hydration**: Fetches the full text and comments for the posts that
+ *       passed the embedding prune, providing rich context for classification.
+ *   6.  **LLM Gate**: The final, high-precision filter. A powerful LLM classifies
+ *       the hydrated posts, keeping only the most valuable ones.
+ *
+ *   Throughout the process, a `CostMeter` tracks API and token costs, and a
+ *   `SearchDatabase` service logs the run and its results for traceability. The
+ *   final response includes the classified posts and detailed performance stats.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { SearchRequest, SearchResponse, SearchStats } from './types';
 
@@ -15,6 +43,14 @@ export async function POST(request: NextRequest) {
   try {
     // Parse and validate request body
     const body = await request.json() as SearchRequest;
+    
+    // Parse test configuration headers for matrix testing support
+    const testHeaders = {
+      strategy: request.headers.get('X-Test-Strategy') || 'sitewide',
+      promptVariant: request.headers.get('X-Test-Prompt-Variant') || 'current',
+      engagementThreshold: parseFloat(request.headers.get('X-Test-Engagement-Threshold') || process.env.SUBTEXT_ENGAGE_THRESH || '5'),
+      oversampleFactor: parseInt(request.headers.get('X-Test-Oversample') || process.env.SUBTEXT_OVERSAMPLE || '20')
+    };
     
     // Validate required fields
     if (!body.audience || typeof body.audience !== 'string') {
@@ -54,6 +90,12 @@ export async function POST(request: NextRequest) {
     // Generate run ID as UUID
     const { v4: uuidv4 } = await import('uuid');
     const runId = uuidv4();
+    
+    // Log test configuration if any test headers are present
+    if (request.headers.get('X-Test-Strategy') || request.headers.get('X-Test-Prompt-Variant') || 
+        request.headers.get('X-Test-Engagement-Threshold') || request.headers.get('X-Test-Oversample')) {
+      console.log(`[${runId}] Test configuration:`, testHeaders);
+    }
     
     // Check for X-Subtext-Run header for run linking (FR-9)
     const subtextRunId = request.headers.get('X-Subtext-Run');
@@ -104,6 +146,8 @@ export async function POST(request: NextRequest) {
     
     // Stage 2: Reddit bulk search with worker pool
     console.log(`[${runId}] Starting Reddit search...`);
+    // TODO: Implement MultiStrategySearchExecutor based on testHeaders.strategy
+    // For now, using existing single-strategy search
     const redditSearch = new RedditBulkSearch(searchParams.premium);
     const searchWorkerPool = WorkerPoolFactory.createSearchPool(
       parseInt(process.env.SUBTEXT_WORKERS_SEARCH || '16')
@@ -124,6 +168,9 @@ export async function POST(request: NextRequest) {
     console.log(`[${runId}] Processing ${bulkSearchResult.posts.length} posts...`);
     const processedPosts = PostProcessor.processPosts(bulkSearchResult.posts);
     
+    // TODO: Implement EngagementPreFilter here based on testHeaders.engagementThreshold
+    // This will reduce the number of posts before expensive embedding processing
+    
     // Import additional components
     const { EmbeddingPrune } = await import('../../../lib/search/embedding-prune');
     const { PostHydrator } = await import('../../../lib/search/post-hydrator');
@@ -143,8 +190,8 @@ export async function POST(request: NextRequest) {
       parseInt(process.env.SUBTEXT_WORKERS_EMBED || '32')
     );
     
-    // Dynamic oversample factor based on post count
-    const baseOversample = parseInt(process.env.SUBTEXT_OVERSAMPLE || '20');
+    // Dynamic oversample factor based on post count (use test header if provided)
+    const baseOversample = testHeaders.oversampleFactor;
     const dynamicOversample = processedPosts.length < 100 
       ? Math.max(baseOversample, Math.floor(processedPosts.length / searchParams.maxPosts))
       : baseOversample;

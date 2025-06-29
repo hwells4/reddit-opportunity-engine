@@ -1,3 +1,28 @@
+/**
+ * API route to initiate a data processing pipeline on the external Gumloop service.
+ * This endpoint acts as a "backend-for-frontend" (BFF), receiving requests from the
+ * application's client, transforming the payload into the format expected by Gumloop,
+ * and then triggering the long-running job.
+ *
+ * - POST /api/start-pipeline:
+ *   Accepts a JSON body that can be in one of two formats (a flexible, modern
+ *   `pipeline_inputs` format or a simpler legacy format).
+ *
+ *   The endpoint's workflow is as follows:
+ *   1.  **Payload Transformation & Validation**: It validates the incoming request and
+ *       transforms it into the flat key-value structure required by the Gumloop API.
+ *       This includes important validation logic, such as ensuring that arrays of
+ *       subreddits and their subscriber counts are consistent.
+ *   2.  **Trigger External Pipeline**: It sends the transformed payload in a POST
+ *       request to the Gumloop `start_pipeline` endpoint to begin the job.
+ *   3.  **Log Transaction**: After a successful response from Gumloop, it saves the
+ *       original request payload and the response from Gumloop to this application's
+ *       own Supabase database. This is a critical step for logging, auditing,
+ *       and debugging, creating a clear record of the transaction.
+ *   4.  **Return Tracking Info**: It returns a success response to the client, including
+ *       the `run_id` provided by Gumloop. The client can then use this `run_id` with
+ *       the `/api/check-status` endpoint to poll for the pipeline's progress.
+ */
 import { NextResponse } from "next/server";
 import { createClient } from '@supabase/supabase-js';
 

@@ -1,3 +1,26 @@
+/**
+ * API route that provides a diagnostic and introspection tool for the Notion integration.
+ * This endpoint allows a developer or administrator to inspect the structure of the
+ * root Notion database that the application is configured to use.
+ *
+ * - GET /api/inspect-database:
+ *   Retrieves the schema of the Notion database specified by the
+ *   `NOTION_DATABASE_ID` environment variable.
+ *
+ *   The endpoint's workflow is as follows:
+ *   1.  **Configuration Check**: Verifies that the `NOTION_DATABASE_ID` is set.
+ *   2.  **Fetch Schema**: Calls the Notion API to retrieve the database's metadata.
+ *   3.  **Parse Properties**: Extracts the name, type, and options (for 'select'
+ *       columns) for every property in the database.
+ *   4.  **Provide Feedback**: Returns a JSON object containing the parsed properties
+ *       and a list of "recommendations" or "adaptations". This feedback explains
+ *       how the application will attempt to map its data to the discovered
+ *       database schema based on column names (e.g., a column named 'Status' will
+ *       be used for tracking completion status).
+ *
+ *   This is a valuable tool for debugging setup issues with the Notion integration,
+ *   providing immediate feedback on schema compatibility.
+ */
 import { NextResponse } from "next/server";
 import { Client } from "@notionhq/client";
 

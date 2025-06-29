@@ -1,3 +1,24 @@
+/**
+ * API route to facilitate human-in-the-loop selection of subreddits.
+ * This endpoint allows a user to refine the results from the initial discovery phase,
+ * ensuring only the most relevant communities proceed to the next stage of analysis.
+ * It interacts with the `DiscoveryOrchestrator` to validate user choices.
+ *
+ * - POST /api/discover/select:
+ *   This is the primary endpoint for finalizing a selection. It's designed to be
+ *   called after a user has been presented with a list of potential subreddits.
+ *   Accepts a JSON body containing the original `candidates` array and an array
+ *   of `selected_subreddits` names chosen by the user.
+ *   The route re-validates the selected subreddits to get the latest data and
+ *   returns a `selection_record` object, which can be passed to downstream
+ *   workflows like Gumloop for further processing.
+ *
+ * - GET /api/discover/select?product=<...>&audience=<...>:
+ *   Provides a lightweight, quick-discovery preview. It uses a faster, less
+ *   comprehensive discovery method (via `quickDiscovery`) to generate a small
+ *   list of high-potential subreddits with basic info. This allows users to
+ *   get a feel for potential results before running a full, intensive discovery process.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { DiscoveryOrchestrator, HumanSelectionRequest, ValidatedSubreddit } from '@/lib/discovery'
 

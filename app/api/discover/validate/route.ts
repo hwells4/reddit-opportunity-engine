@@ -1,3 +1,19 @@
+/**
+ * API route for validating the existence and status of Reddit subreddits.
+ * This endpoint leverages the `RedditValidator` service to interact with the
+ * official Reddit API, providing robust checks with built-in rate limiting.
+ *
+ * It offers two methods for validation:
+ * - POST /api/discover/validate:
+ *   Accepts a JSON body with an array of up to 50 subreddit names (`subreddit_names`).
+ *   It performs a comprehensive validation for each, returning a detailed
+ *   list of results with statuses like 'valid', 'private', 'not_found', or 'error'.
+ *   A summary of the validation counts is also included.
+ *
+ * - GET /api/discover/validate?name=<subreddit_name>:
+ *   A quick, lightweight method to fetch basic public information (name, subscribers,
+ *   description) for a single subreddit. Useful for quick lookups.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { RedditValidator } from '@/lib/discovery'
 

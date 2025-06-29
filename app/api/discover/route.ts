@@ -1,3 +1,26 @@
+/**
+ * API route for orchestrating the advanced subreddit discovery pipeline.
+ * This endpoint serves as the primary entry point for users seeking to find relevant
+ * Reddit communities based on a product, problem, and target audience.
+ *
+ * It orchestrates a multi-stage process involving several specialized services:
+ * 1.  **Multi-Source Discovery**: Gathers subreddit candidates using both AI-driven
+ *     (Perplexity) and search-based (Firecrawl) methods.
+ * 2.  **Validation**: All candidates are rigorously validated against the live Reddit API
+ *     to check for existence, status (public/private), and activity.
+ * 3.  **AI-Powered Analysis**: Valid subreddits are categorized by an AI model into
+ *     'primary', 'secondary', and 'niche' tiers based on relevance to the user's query.
+ *
+ * - POST /api/discover:
+ *   Accepts a JSON body with `product`, `problem`, and `audience` fields.
+ *   Executes the full discovery pipeline and returns a rich object containing
+ *   the final recommendations, raw candidates, validation results, and a summary.
+ *
+ * - GET /api/discover:
+ *   Functions as a health check endpoint, verifying the operational status of
+ *   all underlying services (Reddit, Perplexity, Firecrawl, AI Analysis) and
+ *   reporting the overall system health.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { DiscoveryOrchestrator, DiscoveryRequest } from '@/lib/discovery'
 

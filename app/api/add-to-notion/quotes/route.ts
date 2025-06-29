@@ -1,3 +1,28 @@
+/**
+ * API route for exporting quotes from a specific pipeline run into a new,
+ * dedicated Notion database. This serves as an automated way to create a
+ * customer-facing deliverable from the results of a data analysis run.
+ *
+ * This endpoint leverages a suite of Notion helper functions that include robust
+ * retry logic, batching, and delays to handle Notion API rate limits and
+ * eventual consistency issues (e.g., 409 conflicts).
+ *
+ * - POST /api/add-to-notion/quotes:
+ *   The primary endpoint for creating the Notion database.
+ *   - Requires a `runId` to fetch the relevant quotes from Supabase and a
+ *     `parentPageId` to specify where the new database should be created in Notion.
+ *   - It first fetches all quotes for the run from the application's database.
+ *   - It then creates a new database in Notion, titled for the specific company.
+ *   - Finally, it iterates through the quotes and adds each one as a new page
+ *     to the Notion database, using smart batching to avoid API errors.
+ *   - Returns the URL and ID of the newly created Notion database.
+ *
+ * - GET /api/add-to-notion/quotes?runId=<...>:
+ *   A simple read-only endpoint to preview the quotes available for a given run.
+ *   - Fetches the quotes from Supabase and returns the total count, summary statistics,
+ *     and a preview of the first 10 quotes. This is useful for verifying that a run
+ *     has data before triggering the more intensive POST request.
+ */
 import { NextResponse } from "next/server";
 import { Client } from "@notionhq/client";
 import { createClient } from '@supabase/supabase-js';

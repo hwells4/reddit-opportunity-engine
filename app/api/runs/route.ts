@@ -1,3 +1,27 @@
+/**
+ * API route providing RESTful endpoints for managing "runs". A run represents a
+ * single, stateful execution of a data processing pipeline. This is a core
+ * resource in the application's data model.
+ *
+ * - GET /api/runs:
+ *   A flexible read endpoint for fetching run data.
+ *   1.  **Get Single Run with Stats (`?run_id=...`)**: Fetches the full record for
+ *       a single run and enriches it with calculated statistics about the quotes
+ *       generated during that run (e.g., total count, breakdown by category).
+ *   2.  **List All Runs**: Without a `run_id`, it returns a list of all runs,
+ *       ordered by start time. It also supports filtering by `user_id` for
+ *       future multi-tenancy.
+ *
+ * - POST /api/runs:
+ *   Creates a new run record in the database, typically at the very beginning
+ *   of a pipeline execution. This creates the "container" record that all
+ *   subsequent data (posts, quotes, stats) will be associated with.
+ *   - It requires an `account_id` to associate the run with a specific account.
+ *   - It validates that the provided `account_id` is valid and active before
+ *     creating the run, ensuring referential integrity.
+ *   - On success, it returns the unique `run_id` for the new record, which is then
+ *     used throughout the pipeline.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 

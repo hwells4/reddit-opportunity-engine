@@ -1,3 +1,19 @@
+/**
+ * API route for monitoring the health and performance of the quote parsing system.
+ * This endpoint provides visibility into the system's operational status,
+ * including success rates, error patterns, AI usage costs, and data preservation metrics.
+ *
+ * It supports different views for focused analysis:
+ * - GET /api/monitor?view=health:  Returns key performance indicators and system status (healthy, degraded, critical).
+ * - GET /api/monitor?view=errors:  Provides a breakdown of common errors and actionable recommendations.
+ * - GET /api/monitor?view=full:    Combines both health and error analysis for a complete overview.
+ *
+ * It also supports administrative actions:
+ * - POST /api/monitor with { "action": "reset" }: Resets all collected metrics to their initial state.
+ *
+ * The underlying `ProcessingMonitor` class aggregates data from various processing runs
+ * to provide these insights.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { ProcessingMonitor } from '../../../utils/processing-monitor'
 

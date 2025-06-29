@@ -1,3 +1,27 @@
+/**
+ * API route for retrieving and filtering quotes extracted from Reddit posts.
+ * This endpoint serves as the primary data source for a UI that displays the
+ * results of a data processing pipeline, allowing users to browse and search
+ * for specific insights (quotes) within a given pipeline run.
+ *
+ * It interacts directly with a Supabase database containing `runs`, `posts`,
+ * and `quotes` tables.
+ *
+ * - GET /api/quotes?run_id=<...>&post_id=<...>&category=<...>&limit=<...>&offset=<...>:
+ *   A flexible read endpoint for fetching quotes and their parent posts.
+ *   - The `run_id` parameter is required to scope the request.
+ *   - Optional filters like `post_id` and `category` allow for more specific queries.
+ *   - The response is richly structured, nesting quotes within their corresponding
+ *     posts for easy attribution and providing a summary of the entire run.
+ *
+ * - POST /api/quotes:
+ *   Provides an advanced filtering mechanism for quotes.
+ *   - Accepts a JSON body with optional filters: `post_ids` (array),
+ *     `categories` (array), and `search_text` (string).
+ *   - It dynamically constructs a Supabase query based on the provided filters
+ *     to return a precise list of matching quotes and their related posts.
+ *   - This endpoint is ideal for powering interactive search and filter UI components.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 

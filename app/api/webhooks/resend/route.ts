@@ -1,3 +1,28 @@
+/**
+ * API route providing an advanced "resend" and A/B testing framework for the
+ * data processing pipelines. This is a powerful internal tool designed for
+ * debugging, iteration, and comparing the performance of different pipeline versions.
+ *
+ * - GET /api/webhooks/resend?run_id=<...>:
+ *   Retrieves the original webhook payload that was sent to an external service
+ *   for a specific `run_id`. This allows a developer to inspect the exact input
+ *   of a previous run before deciding to modify and resend it.
+ *
+ * - POST /api/webhooks/resend:
+ *   The core functional endpoint for modifying and re-triggering a pipeline run.
+ *   - It takes a base `run_id` and a set of `modifications` or an `ai_prompt`.
+ *   - **AI-Powered Modification**: If an `ai_prompt` is provided, it uses an LLM
+ *     to intelligently modify the original request payload based on natural language
+ *     instructions.
+ *   - **Intelligent Validation**: If subreddits are modified, it automatically
+ *     re-validates them against the Reddit API and updates their subscriber counts.
+ *   - **A/B Testing**: It can dispatch the modified payload to multiple different
+ *     workflow URLs simultaneously, allowing for direct comparison of results.
+ *   - **Traceability**: It creates a *new* run record in the database for each
+ *     resent job, ensuring a clear audit trail and preventing data corruption.
+ *   - The response is a detailed summary of the test results, indicating which
+ *     workflows were triggered and whether they succeeded.
+ */
 import { NextResponse } from "next/server";
 import { createClient } from '@supabase/supabase-js';
 import { RedditValidator } from '../../../../lib/discovery/reddit-validator';

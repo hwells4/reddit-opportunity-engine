@@ -1,3 +1,38 @@
+/**
+ * API route for the core data ingestion and processing pipeline. This is a critical
+ * backend endpoint that receives raw, semi-structured analysis data for a batch of
+ * Reddit posts, then parses, cleans, structures, and saves the information into
+ * the application's database.
+ *
+ * It is designed to be highly resilient, using a multi-layer fallback system
+ * (including AI-powered extraction) to handle messy, real-world data and ensure
+ * that as much information as possible is saved correctly.
+ *
+ * - POST /api/process:
+ *   Accepts a `ProcessedPostData` object, which contains a `run_id` and an array
+ *   of posts, each with a `raw_analysis` text field.
+ *
+ *   The endpoint's architecture is built around several key services:
+ *   1.  **PostProcessor**: Orchestrates the processing for each individual post.
+ *   2.  **QuoteExtractor**: The most complex component. It uses a series of fallback
+ *       strategies to extract structured quotes from the `raw_analysis` text:
+ *       - Tries parsing structured XML-like tags first.
+ *       - Falls back to generic regex patterns.
+ *       - If that fails, it calls an external LLM (via OpenRouter) to intelligently
+ *         extract quotes from the unstructured text.
+ *       - Finally, uses simple heuristics (text in quotes, sentence patterns) if all
+ *         else fails, ensuring maximum data recovery.
+ *   3.  **DatabaseService**: Manages all Supabase interactions. It includes smart
+ *       logic to prevent overwriting existing good data with empty fields during
+ *       re-processing and handles the batch insertion of posts and quotes.
+ *   4.  **ProcessingMonitor Integration**: The entire process is instrumented,
+ *       feeding detailed metrics about successes, errors, and fallbacks used
+ *       into the monitoring system, which is exposed via the `/api/monitor` route.
+ *
+ *   The main handler processes each post in a batch independently to ensure that an
+ *   error in one post does not halt the entire process, returning a comprehensive
+ *    summary of the job upon completion.
+ */
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'

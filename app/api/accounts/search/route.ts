@@ -1,3 +1,23 @@
+/**
+ * API route specifically designed to power a search feature for "accounts".
+ * As suggested by the `formatAccountForCLI` helper function, this endpoint is
+ * likely optimized for an internal tool or Command Line Interface (CLI) where a
+ * user needs to quickly find and select an account from the database.
+ *
+ * - GET /api/accounts/search?q=<...>&limit=<...>:
+ *   Searches for active accounts in the Supabase `accounts` table.
+ *
+ *   The endpoint has two behaviors based on the `q` parameter:
+ *   1.  **No Query**: If the `q` parameter is empty or not provided, it returns a
+ *       list of the most recently created accounts. This provides a sensible default
+ *       for a search interface.
+ *   2.  **With Query**: If the `q` parameter is provided, it performs a case-insensitive
+ *       search across the `company_name`, `contact_name`, and `email` fields,
+ *       offering a flexible way to find a specific account.
+ *
+ *   All results are formatted into a user-friendly structure, including a
+ *   combined `display_name`, before being returned.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 

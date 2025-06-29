@@ -1,3 +1,38 @@
+/**
+ * API route for orchestrating the creation of a complete, multi-page market
+ * research report in Notion. This is a highly complex endpoint that follows a
+ * "quick response" pattern to provide a fast user experience while handling
+ * time-consuming tasks asynchronously in the background.
+ *
+ * - POST /api/add-to-notion:
+ *   Accepts a JSON body containing report content, a `runId` for data fetching,
+ *   and account information.
+ *
+ *   The process is split into two phases:
+ *
+ *   --- PHASE 1: Synchronous "Quick Response" ---
+ *   This phase executes immediately to provide a fast response to the client.
+ *   1.  Creates a main "parent" page in a root Notion database.
+ *   2.  Creates a "branded homepage" for the report as a sub-page.
+ *   3.  Creates individual sub-pages for each report (e.g., "Strategy Report"),
+ *       populating them with only a truncated snippet of the content for speed.
+ *   4.  Populates the homepage with a basic structure, including titles, links to
+ *       the sub-pages, and "loading" placeholders for async content.
+ *   5.  Initializes a status tracker for the background jobs.
+ *   6.  Returns a 200 OK response immediately with links to the newly created
+ *       Notion pages and a URL to poll for the status of the background tasks.
+ *
+ *   --- PHASE 2: Asynchronous "Fire and Forget" Processing ---
+ *   These tasks run in the background after the initial response is sent.
+ *   Their progress is tracked using an in-memory status tracker.
+ *   1.  **AI Content Generation**: Generates an AI-powered title and a personalized
+ *       introduction for the homepage, replacing the placeholders.
+ *   2.  **Quote Database Processing**: If a `runId` is provided, it triggers the
+ *       creation of a dedicated Notion database and populates it with all quotes
+ *       from that run.
+ *   3.  **Full Report Population**: Replaces the truncated content in the child
+ *       report pages with the full, formatted report content.
+ */
 import { NextResponse } from "next/server";
 import { Client } from "@notionhq/client";
 import { createClient } from '@supabase/supabase-js';
